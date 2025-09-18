@@ -89,7 +89,10 @@ const Applications = () => {
         </div>
         <button
           className="btn btn-primary"
-          onClick={() => setShowApplicationForm(true)}
+          onClick={() => {
+            console.log('Add Application button clicked');
+            setShowApplicationForm(true);
+          }}
         >
           <Plus size={16} />
           New Application
@@ -247,7 +250,11 @@ const Applications = () => {
               }
             </p>
             {!searchTerm && statusFilter === 'all' && (
-              <button className="btn btn-primary" style={{ marginTop: '16px' }}>
+              <button
+                className="btn btn-primary"
+                style={{ marginTop: '16px' }}
+                onClick={() => setShowApplicationForm(true)}
+              >
                 <Plus size={16} />
                 Add Your First Application
               </button>
@@ -302,6 +309,7 @@ const Applications = () => {
         </div>
       )}
 
+      {console.log('ApplicationForm isOpen:', showApplicationForm)}
       <ApplicationForm
         isOpen={showApplicationForm}
         onClose={() => setShowApplicationForm(false)}

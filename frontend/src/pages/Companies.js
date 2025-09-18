@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
+import { Link } from 'react-router-dom';
 import {
   Plus,
   Building2,
@@ -9,7 +10,13 @@ import {
   MapPin,
   Users,
   DollarSign,
-  Calendar
+  Calendar,
+  Briefcase,
+  Target,
+  Eye,
+  CheckCircle,
+  XCircle,
+  Clock
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -216,30 +223,47 @@ const Companies = () => {
                   </span>
                 </div>
 
-                <div className="grid grid-2" style={{ gap: '16px', marginBottom: '12px' }}>
+                <div className="grid grid-3" style={{ gap: '12px', marginBottom: '12px' }}>
                   <div style={{ textAlign: 'center' }}>
                     <div style={{
-                      fontSize: '20px',
+                      fontSize: '18px',
                       fontWeight: '700',
                       color: '#1f2937'
                     }}>
                       {company.total_jobs_posted || 0}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
                       Jobs Posted
                     </div>
                   </div>
 
                   <div style={{ textAlign: 'center' }}>
                     <div style={{
-                      fontSize: '20px',
+                      fontSize: '18px',
                       fontWeight: '700',
                       color: '#3b82f6'
                     }}>
                       {company.applications_sent || 0}
                     </div>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                      Applications Sent
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                      Applications
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'center' }}>
+                    <div style={{
+                      fontSize: '18px',
+                      fontWeight: '700',
+                      color: company.applications_sent > 0
+                        ? (company.applications_sent >= 3 ? '#10b981' : '#f59e0b')
+                        : '#6b7280'
+                    }}>
+                      {company.applications_sent > 0
+                        ? Math.round((1 / company.applications_sent) * 100) + '%'
+                        : '-'}
+                    </div>
+                    <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                      Est. Rate
                     </div>
                   </div>
                 </div>
@@ -297,17 +321,64 @@ const Companies = () => {
                 )}
               </div>
 
+              {/* Application Status Indicators */}
+              {company.applications_sent > 0 && (
+                <div style={{
+                  display: 'flex',
+                  gap: '8px',
+                  marginTop: '12px',
+                  flexWrap: 'wrap'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '12px',
+                    color: '#6b7280'
+                  }}>
+                    <Clock size={12} style={{ color: '#f59e0b' }} />
+                    <span>In Progress</span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '12px',
+                    color: '#6b7280'
+                  }}>
+                    <CheckCircle size={12} style={{ color: '#10b981' }} />
+                    <span>Interview</span>
+                  </div>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    fontSize: '12px',
+                    color: '#6b7280'
+                  }}>
+                    <XCircle size={12} style={{ color: '#ef4444' }} />
+                    <span>Rejected</span>
+                  </div>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div style={{
                 display: 'flex',
                 gap: '8px',
                 marginTop: '16px'
               }}>
-                <button className="btn btn-secondary" style={{ flex: 1, fontSize: '12px' }}>
+                <Link
+                  to={`/companies/${company.id}`}
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '12px', textDecoration: 'none', textAlign: 'center' }}
+                >
+                  <Eye size={12} style={{ marginRight: '4px' }} />
                   View Details
-                </button>
+                </Link>
                 <button className="btn btn-primary" style={{ flex: 1, fontSize: '12px' }}>
-                  Track Jobs
+                  <Target size={12} style={{ marginRight: '4px' }} />
+                  Apply Now
                 </button>
               </div>
             </div>

@@ -9,6 +9,7 @@ from flask_cors import CORS
 from flasgger import Swagger
 import sys
 import os
+import json
 from datetime import datetime, date
 from dotenv import load_dotenv
 
@@ -200,6 +201,44 @@ def get_company(company_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/companies/<int:company_id>/jobs', methods=['GET'])
+def get_company_job_postings(company_id):
+    """Get all job postings for a company"""
+    try:
+        jobs = db.get_company_job_postings(company_id)
+        return jsonify({'job_postings': jobs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/companies/<int:company_id>/applications', methods=['GET'])
+def get_company_applications(company_id):
+    """Get all applications for a company"""
+    try:
+        applications = db.get_company_applications(company_id)
+        return jsonify({'applications': applications})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/companies/<int:company_id>/stats', methods=['GET'])
+def get_company_stats(company_id):
+    """Get comprehensive stats for a company"""
+    try:
+        stats = db.get_company_stats(company_id)
+        return jsonify({'stats': stats})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/companies/<int:company_id>/details', methods=['GET'])
+def get_company_details(company_id):
+    """Get detailed company information"""
+    try:
+        company = db.get_company_details(company_id)
+        if not company:
+            return jsonify({'error': 'Company not found'}), 404
+        return jsonify({'company': company})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/api/companies/search', methods=['GET'])
 def search_companies():
     """Search companies by name"""
@@ -218,33 +257,92 @@ def search_companies():
 def get_resume_versions():
     """Get all resume versions"""
     try:
+        print(f"🔍 [DEBUG] Fetching all resume versions")
         versions = db.list_resume_versions()
+        print(f"🔍 [DEBUG] Found {len(versions)} resume versions")
+
+        for i, version in enumerate(versions):
+            print(f"🔍 [DEBUG] Version {i+1}: ID={version.get('id')}, "
+                  f"name='{version.get('version_name')}', "
+                  f"s3_key='{version.get('s3_key')}', "
+                  f"filename='{version.get('filename')}'")
+
         return jsonify({'resume_versions': versions})
     except Exception as e:
+        print(f"❌ [ERROR] Error fetching resume versions: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/resume-versions', methods=['POST'])
 def create_resume_version():
     """Create a new resume version"""
     try:
-        data = request.get_json()
+        print(f"🔍 [DEBUG] Resume version creation request received")
+        print(f"🔍 [DEBUG] Content type: {request.content_type}")
 
-        # Handle file upload if provided
-        s3_key = None
-        if 'file_path' in data and data['file_path']:
-            s3_key = s3.upload_resume(data['file_path'], data['version_name'])
+        # Handle both JSON and multipart form data
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            print(f"🔍 [DEBUG] Processing multipart form data with file upload")
+
+            # Extract form data
+            data = {}
+            for key in request.form.keys():
+                value = request.form[key]
+                if key == 'skills_emphasized':
+                    try:
+                        data[key] = json.loads(value) if value else []
+                    except:
+                        data[key] = value.split(',') if value else []
+                else:
+                    data[key] = value
+
+            print(f"🔍 [DEBUG] Form data: {data}")
+
+            # Handle file upload
+            s3_key = None
+            uploaded_file = request.files.get('file')
+
+            if uploaded_file and uploaded_file.filename:
+                print(f"🔍 [DEBUG] File uploaded: {uploaded_file.filename}")
+
+                # Save file temporarily
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                    uploaded_file.save(tmp_file.name)
+                    temp_file_path = tmp_file.name
+
+                try:
+                    # Upload to S3
+                    s3_key = s3.upload_resume(temp_file_path, data['version_name'])
+                    print(f"🔍 [DEBUG] File uploaded to S3: {s3_key}")
+                finally:
+                    # Clean up temp file
+                    os.unlink(temp_file_path)
+
+                # Use uploaded filename
+                filename = uploaded_file.filename
+            else:
+                print(f"🔍 [DEBUG] No file uploaded")
+                filename = f"{data['version_name']}.pdf"
+        else:
+            print(f"🔍 [DEBUG] Processing JSON data (no file upload)")
+            data = request.get_json()
+            s3_key = None
+            filename = data.get('filename', f"{data['version_name']}.pdf")
 
         # Prepare data for database
         db_data = {
-            'filename': data.get('file_path', f"{data['version_name']}.pdf"),
+            'filename': filename,
             'version_name': data['version_name'],
-            'content_text': data.get('content_text', ''),  # Empty for now
+            'content_text': data.get('content_text', ''),
             's3_key': s3_key,
             'skills_emphasized': data.get('skills_emphasized', []),
             'target_roles': data.get('target_roles'),
             'is_master': data.get('is_master', False),
             'description': data.get('description')
         }
+
+        print(f"🔍 [DEBUG] Database data: {db_data}")
 
         version_id = db.add_resume_version(**db_data)
         version = db.get_resume_version(version_id)
@@ -347,6 +445,20 @@ def get_recruiter(recruiter_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/recruiters/<int:recruiter_id>', methods=['PUT'])
+def update_recruiter(recruiter_id):
+    """Update recruiter information"""
+    try:
+        data = request.get_json()
+        success = db.update_recruiter(recruiter_id, **data)
+        if success:
+            recruiter = db.get_recruiter(recruiter_id)
+            return jsonify({'recruiter': recruiter})
+        else:
+            return jsonify({'error': 'Recruiter not found or no changes made'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
 @app.route('/api/recruiters/<int:recruiter_id>/resume', methods=['PUT'])
 def update_recruiter_resume(recruiter_id):
     """Update which resume version a recruiter has"""
@@ -361,6 +473,53 @@ def update_recruiter_resume(recruiter_id):
         return jsonify({'recruiter': recruiter})
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+@app.route('/api/recruiters/<int:recruiter_id>/resume-history', methods=['GET'])
+def get_recruiter_resume_history(recruiter_id):
+    """Get resume sharing history with a recruiter"""
+    try:
+        history = db.get_recruiter_resume_history(recruiter_id)
+        return jsonify({'resume_history': history})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recruiters/<int:recruiter_id>/resume-history', methods=['POST'])
+def add_recruiter_resume_share(recruiter_id):
+    """Track sharing a resume with a recruiter"""
+    try:
+        data = request.get_json()
+        share_id = db.add_recruiter_resume_share(recruiter_id, **data)
+        return jsonify({'share_id': share_id}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/recruiters/<int:recruiter_id>/communications', methods=['GET'])
+def get_recruiter_communications(recruiter_id):
+    """Get communication history with a recruiter"""
+    try:
+        communications = db.get_recruiter_communications(recruiter_id)
+        return jsonify({'communications': communications})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/recruiters/<int:recruiter_id>/communications', methods=['POST'])
+def add_recruiter_communication(recruiter_id):
+    """Log communication with a recruiter"""
+    try:
+        data = request.get_json()
+        comm_id = db.add_recruiter_communication(recruiter_id, **data)
+        return jsonify({'communication_id': comm_id}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/recruiters/dashboard', methods=['GET'])
+def get_recruiter_dashboard():
+    """Get recruiter dashboard with metrics"""
+    try:
+        dashboard = db.get_recruiter_dashboard()
+        return jsonify({'recruiters': dashboard})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Job posting endpoints
 @app.route('/api/job-postings', methods=['GET'])
@@ -485,21 +644,92 @@ def search_applications():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# Application timeline endpoints
+@app.route('/api/applications/<int:application_id>/timeline', methods=['GET'])
+def get_application_timeline(application_id):
+    """Get application timeline/events"""
+    try:
+        timeline = db.get_application_timeline(application_id)
+        return jsonify({'timeline': timeline})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/applications/<int:application_id>/timeline', methods=['POST'])
+def add_application_event(application_id):
+    """Add event to application timeline"""
+    try:
+        data = request.get_json()
+        event_id = db.add_application_event(application_id, **data)
+        return jsonify({'event_id': event_id}), 201
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/application-events/<int:event_id>', methods=['PUT'])
+def update_application_event(event_id):
+    """Update application event"""
+    try:
+        data = request.get_json()
+        success = db.update_application_event(event_id, **data)
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Event not found or no changes made'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/application-events/<int:event_id>', methods=['DELETE'])
+def delete_application_event(event_id):
+    """Delete application event"""
+    try:
+        success = db.delete_application_event(event_id)
+        if success:
+            return jsonify({'success': True})
+        else:
+            return jsonify({'error': 'Event not found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
+@app.route('/api/follow-ups', methods=['GET'])
+def get_upcoming_follow_ups():
+    """Get upcoming follow-ups across all applications"""
+    try:
+        days_ahead = request.args.get('days', 7, type=int)
+        follow_ups = db.get_upcoming_follow_ups(days_ahead)
+        return jsonify({'follow_ups': follow_ups})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # File download endpoints
 @app.route('/api/files/download-url', methods=['POST'])
 def get_download_url():
     """Get pre-signed download URL for S3 file"""
     try:
+        print(f"🔍 [DEBUG] Download URL request received")
+
         data = request.get_json()
+        print(f"🔍 [DEBUG] Request data: {data}")
+
         s3_key = data.get('s3_key')
         expires_in = data.get('expires_in', 3600)  # Default 1 hour
 
+        print(f"🔍 [DEBUG] S3 key: {s3_key}")
+        print(f"🔍 [DEBUG] Expires in: {expires_in}")
+
         if not s3_key:
+            print(f"❌ [ERROR] No s3_key provided")
             return jsonify({'error': 's3_key required'}), 400
 
+        print(f"🔍 [DEBUG] S3 Helper config: {s3.get_bucket_info()}")
+
         url = s3.get_download_url(s3_key, expires_in)
+        print(f"🔍 [DEBUG] Generated URL: {url}")
+
         return jsonify({'download_url': url})
     except Exception as e:
+        print(f"❌ [ERROR] Exception in get_download_url: {str(e)}")
+        print(f"❌ [ERROR] Exception type: {type(e).__name__}")
+        import traceback
+        print(f"❌ [ERROR] Traceback: {traceback.format_exc()}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/files/list', methods=['GET'])

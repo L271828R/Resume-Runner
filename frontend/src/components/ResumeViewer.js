@@ -14,28 +14,45 @@ const ResumeViewer = ({ version, onClose }) => {
   }, [version]);
 
   const fetchDownloadUrl = async () => {
+    console.log('🔍 [DEBUG] fetchDownloadUrl called');
+    console.log('🔍 [DEBUG] version object:', version);
+    console.log('🔍 [DEBUG] s3_key:', version?.s3_key);
+
     setIsLoading(true);
     setError(null);
 
     try {
+      const requestBody = {
+        s3_key: version.s3_key,
+        expires_in: 3600 // 1 hour
+      };
+
+      console.log('🔍 [DEBUG] Request body:', requestBody);
+
       const response = await fetch('/api/files/download-url', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          s3_key: version.s3_key,
-          expires_in: 3600 // 1 hour
-        }),
+        body: JSON.stringify(requestBody),
       });
 
+      console.log('🔍 [DEBUG] Response status:', response.status);
+      console.log('🔍 [DEBUG] Response ok:', response.ok);
+
       if (!response.ok) {
-        throw new Error('Failed to generate download URL');
+        const errorText = await response.text();
+        console.log('❌ [ERROR] Response error text:', errorText);
+        throw new Error(`Failed to generate download URL: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      console.log('🔍 [DEBUG] Response data:', data);
+
       setDownloadUrl(data.download_url);
+      console.log('🔍 [DEBUG] Download URL set:', data.download_url);
     } catch (err) {
+      console.log('❌ [ERROR] Error in fetchDownloadUrl:', err);
       setError(err.message);
     } finally {
       setIsLoading(false);

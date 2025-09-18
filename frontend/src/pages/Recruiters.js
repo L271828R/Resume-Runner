@@ -23,8 +23,8 @@ const Recruiters = () => {
   const [showRecruiterForm, setShowRecruiterForm] = useState(false);
 
   const { data, isLoading, error } = useQuery(
-    'recruiters',
-    () => fetch('/api/recruiters').then(res => res.json())
+    'recruiter-dashboard',
+    () => fetch('/api/recruiters/dashboard').then(res => res.json())
   );
 
   if (isLoading) return <div>Loading recruiters...</div>;

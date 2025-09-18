@@ -43,6 +43,9 @@ const ResumeVersions = () => {
   };
 
   const handleViewResume = (version) => {
+    console.log('🔍 [DEBUG] handleViewResume called with version:', version);
+    console.log('🔍 [DEBUG] Version s3_key:', version?.s3_key);
+    console.log('🔍 [DEBUG] Version filename:', version?.filename);
     setViewingVersion(version);
   };
 

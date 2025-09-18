@@ -6,7 +6,9 @@ import Dashboard from './pages/Dashboard';
 import Applications from './pages/Applications';
 import ResumeVersions from './pages/ResumeVersions';
 import Companies from './pages/Companies';
+import CompanyDetail from './pages/CompanyDetail';
 import Recruiters from './pages/Recruiters';
+import RecruiterDetail from './pages/RecruiterDetail';
 import ApplicationDetail from './pages/ApplicationDetail';
 
 const queryClient = new QueryClient({
@@ -32,7 +34,9 @@ function App() {
                 <Route path="/applications/:id" element={<ApplicationDetail />} />
                 <Route path="/resume-versions" element={<ResumeVersions />} />
                 <Route path="/companies" element={<Companies />} />
+                <Route path="/companies/:id" element={<CompanyDetail />} />
                 <Route path="/recruiters" element={<Recruiters />} />
+                <Route path="/recruiters/:id" element={<RecruiterDetail />} />
               </Routes>
             </div>
           </main>

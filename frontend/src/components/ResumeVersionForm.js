@@ -55,12 +55,44 @@ const ResumeVersionForm = ({ version, onClose }) => {
           : []
       };
 
-      // For now, don't include file_path since we don't have actual file upload implemented
-      // The backend will work in stub mode without a file
+      // If a file is selected, upload it first
+      if (selectedFile) {
+        console.log('🔍 [DEBUG] Uploading file:', selectedFile.name);
 
-      await createMutation.mutateAsync(submitData);
+        const formDataWithFile = new FormData();
+        formDataWithFile.append('file', selectedFile);
+
+        // Add all form data to FormData
+        Object.keys(submitData).forEach(key => {
+          if (key === 'skills_emphasized') {
+            formDataWithFile.append(key, JSON.stringify(submitData[key]));
+          } else {
+            formDataWithFile.append(key, submitData[key]);
+          }
+        });
+
+        // Send form data with file
+        const response = await fetch('/api/resume-versions', {
+          method: 'POST',
+          body: formDataWithFile,
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to upload resume');
+        }
+
+        const result = await response.json();
+        console.log('🔍 [DEBUG] Upload result:', result);
+
+        // Invalidate queries to refresh data
+        queryClient.invalidateQueries('resume-versions');
+        onClose();
+      } else {
+        // No file, use regular JSON submission
+        await createMutation.mutateAsync(submitData);
+      }
     } catch (error) {
-      console.error('Error creating resume version:', error);
+      console.error('❌ [ERROR] Error creating resume version:', error);
     } finally {
       setIsSubmitting(false);
     }
@@ -315,7 +347,7 @@ const ResumeVersionForm = ({ version, onClose }) => {
                       Click to upload resume (optional)
                     </p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
-                      PDF, DOC, or DOCX files only • File upload coming soon
+                      PDF, DOC, or DOCX files only
                     </p>
                   </div>
                 )}

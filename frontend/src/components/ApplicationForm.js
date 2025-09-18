@@ -18,7 +18,7 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
   const [jobPostingText, setJobPostingText] = useState(application?.job_posting_text || '');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
-  const { register, handleSubmit, watch, setValue, formState: { errors } } = useForm({
+  const { register, handleSubmit, watch, setValue, formState: { errors }, trigger } = useForm({
     defaultValues: application ? {
       company_id: application.company_id?.toString(),
       position_title: application.position_title,
@@ -34,6 +34,10 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
       notes: application.notes
     } : {}
   });
+
+  // Register validation rules for SearchableDropdown fields
+  register('application_source', { required: 'Application source is required' });
+  register('resume_version_id', { required: 'Resume version is required' });
 
   // Fetch companies and resume versions for dropdowns
   const { data: companies } = useQuery(
@@ -103,14 +107,28 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
   if (!isOpen) return null;
 
   const onFormSubmit = async (data) => {
+    console.log('Form data received:', data);
+
     // Validate required fields
     if (!data.application_source) {
+      console.error('Missing application_source');
       setValue('application_source', '', { shouldValidate: true });
       return;
     }
 
     if (!data.resume_version_id) {
+      console.error('Missing resume_version_id');
       setValue('resume_version_id', '', { shouldValidate: true });
+      return;
+    }
+
+    if (!data.company_id) {
+      console.error('Missing company_id');
+      return;
+    }
+
+    if (!data.position_title) {
+      console.error('Missing position_title');
       return;
     }
 
@@ -120,7 +138,9 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
       // Combine form data with job posting text
       const applicationData = {
         ...data,
+        company_id: parseInt(data.company_id),
         resume_version_id: parseInt(data.resume_version_id),
+        recruiter_id: data.recruiter_id ? parseInt(data.recruiter_id) : null,
         job_posting_text: jobPostingText,
         salary_min: data.salary_min ? parseInt(data.salary_min) : null,
         salary_max: data.salary_max ? parseInt(data.salary_max) : null,
@@ -128,9 +148,31 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
         application_date: data.application_date || new Date().toISOString().split('T')[0]
       };
 
+      console.log('Submitting application data:', applicationData);
       await onSubmit(applicationData);
+
+      // If a recruiter was selected, track resume sharing
+      if (applicationData.recruiter_id && applicationData.resume_version_id) {
+        try {
+          await fetch(`/api/recruiters/${applicationData.recruiter_id}/resume-history`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              resume_version_id: applicationData.resume_version_id,
+              sharing_context: 'job_application',
+              notes: `Shared for job application: ${applicationData.position_title} at ${companies?.companies?.find(c => c.id == applicationData.company_id)?.name}`
+            }),
+          });
+        } catch (error) {
+          console.warn('Failed to track resume sharing with recruiter:', error);
+          // Don't fail the application submission if this fails
+        }
+      }
     } catch (error) {
       console.error('Error submitting application:', error);
+      alert('Error creating application: ' + error.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -171,25 +213,29 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
     background: 'white',
     borderRadius: '12px',
     width: '100%',
-    maxWidth: '800px',
-    maxHeight: '90vh',
+    maxWidth: '900px',
+    maxHeight: '95vh',
     overflow: 'hidden',
     display: 'flex',
-    flexDirection: 'column'
+    flexDirection: 'column',
+    margin: 'auto'
   };
 
   const headerStyle = {
-    padding: '24px',
+    padding: '20px 24px',
     borderBottom: '1px solid #e5e7eb',
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between'
+    justifyContent: 'space-between',
+    flexShrink: 0
   };
 
   const contentStyle = {
     padding: '24px',
     overflowY: 'auto',
-    flex: 1
+    flex: 1,
+    minHeight: 0,
+    maxHeight: 'calc(95vh - 140px)'
   };
 
   const footerStyle = {
@@ -197,7 +243,8 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
     borderTop: '1px solid #e5e7eb',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    flexShrink: 0
   };
 
   return (
@@ -224,202 +271,38 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
 
         <form onSubmit={handleSubmit(onFormSubmit)}>
           <div style={contentStyle}>
-            <div className="grid grid-2" style={{ gap: '24px' }}>
-              {/* Left Column */}
-              <div>
-                <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
-                  <Building2 size={16} style={{ display: 'inline', marginRight: '8px' }} />
-                  Company & Position
-                </h3>
-
-                <div className="form-group">
-                  <label className="form-label">Company *</label>
-                  <select
-                    className="form-input"
-                    {...register('company_id', { required: 'Company is required' })}
-                  >
-                    <option value="">Select a company</option>
-                    {companies?.companies?.map(company => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.company_id && (
-                    <div style={{ color: '#ef4444', fontSize: '14px', marginTop: '4px' }}>
-                      {errors.company_id.message}
-                    </div>
-                  )}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Position Title *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g., Senior Software Engineer"
-                    {...register('position_title', { required: 'Position title is required' })}
-                  />
-                  {errors.position_title && (
-                    <div style={{ color: '#ef4444', fontSize: '14px', marginTop: '4px' }}>
-                      {errors.position_title.message}
-                    </div>
-                  )}
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Application Source *</label>
-                  <SearchableDropdown
-                    options={applicationSourceOptions}
-                    value={watch('application_source') || ''}
-                    onChange={(value) => setValue('application_source', value)}
-                    placeholder="Select application source..."
-                    required
-                    error={errors.application_source?.message}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Location</label>
-                  <SearchableDropdown
-                    options={locationOptions}
-                    value={watch('job_location') || ''}
-                    onChange={(value) => setValue('job_location', value)}
-                    placeholder="Select job location..."
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Resume Version Used *</label>
-                  <SearchableDropdown
-                    options={resumeVersions?.resume_versions?.map(version => ({
-                      value: version.id.toString(),
-                      label: `${version.version_name}${version.is_master ? ' (Master)' : ''}`
-                    })) || []}
-                    value={watch('resume_version_id') || ''}
-                    onChange={(value) => setValue('resume_version_id', value)}
-                    placeholder="Select resume version..."
-                    required
-                    error={errors.resume_version_id?.message}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Recruiter (Optional)</label>
-                  <select
-                    className="form-input"
-                    {...register('recruiter_id')}
-                  >
-                    <option value="">No recruiter / Direct application</option>
-                    {recruiters?.recruiters?.map(recruiter => (
-                      <option key={recruiter.id} value={recruiter.id}>
-                        {recruiter.name} ({recruiter.company || 'Independent'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="grid grid-2" style={{ gap: '12px' }}>
-                  <div className="form-group">
-                    <label className="form-label">Application Date</label>
-                    <input
-                      type="date"
-                      className="form-input"
-                      defaultValue={new Date().toISOString().split('T')[0]}
-                      {...register('application_date')}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Application Source</label>
-                    <select className="form-input" {...register('application_source')}>
-                      <option value="">Select source</option>
-                      <option value="LinkedIn">LinkedIn</option>
-                      <option value="Indeed">Indeed</option>
-                      <option value="Company Website">Company Website</option>
-                      <option value="AngelList">AngelList</option>
-                      <option value="Glassdoor">Glassdoor</option>
-                      <option value="Recruiter">Recruiter</option>
-                      <option value="Referral">Referral</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                </div>
+            {/* Validation Summary */}
+            {Object.keys(errors).length > 0 && (
+              <div style={{
+                background: '#fef2f2',
+                border: '1px solid #fecaca',
+                borderRadius: '8px',
+                padding: '16px',
+                marginBottom: '24px'
+              }}>
+                <h4 style={{
+                  margin: '0 0 8px 0',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  color: '#dc2626'
+                }}>
+                  Please fix the following errors:
+                </h4>
+                <ul style={{
+                  margin: 0,
+                  paddingLeft: '20px',
+                  fontSize: '14px',
+                  color: '#dc2626'
+                }}>
+                  {Object.entries(errors).map(([field, error]) => (
+                    <li key={field}>{error.message}</li>
+                  ))}
+                </ul>
               </div>
+            )}
 
-              {/* Right Column */}
-              <div>
-                <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
-                  <DollarSign size={16} style={{ display: 'inline', marginRight: '8px' }} />
-                  Job Details
-                </h3>
-
-                <div className="grid grid-2" style={{ gap: '12px' }}>
-                  <div className="form-group">
-                    <label className="form-label">Salary Min ($)</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      placeholder="e.g., 120000"
-                      {...register('salary_min')}
-                    />
-                  </div>
-
-                  <div className="form-group">
-                    <label className="form-label">Salary Max ($)</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      placeholder="e.g., 150000"
-                      {...register('salary_max')}
-                    />
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Work Type</label>
-                  <select className="form-input" {...register('is_remote')}>
-                    <option value="">Not specified</option>
-                    <option value="true">Remote</option>
-                    <option value="false">On-site</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Location</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="e.g., San Francisco, CA"
-                    {...register('location')}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Job Posting URL</label>
-                  <input
-                    type="url"
-                    className="form-input"
-                    placeholder="https://..."
-                    {...register('job_board_url')}
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label className="form-label">Initial Status</label>
-                  <select className="form-input" {...register('status')} defaultValue="applied">
-                    <option value="applied">Applied</option>
-                    <option value="phone_screen">Phone Screen Scheduled</option>
-                    <option value="interview">Interview Scheduled</option>
-                    <option value="offer">Offer Received</option>
-                    <option value="rejected">Rejected</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {/* Job Posting Section */}
-            <div style={{ marginTop: '32px' }}>
+            {/* Job Description Section - Moved to top for better visibility */}
+            <div style={{ marginBottom: '32px' }}>
               <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
                 <FileText size={16} style={{ display: 'inline', marginRight: '8px' }} />
                 Job Description
@@ -507,7 +390,7 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
                   {/* Text Area */}
                   <textarea
                     className="form-textarea"
-                    rows="15"
+                    rows="8"
                     placeholder="Paste the complete job posting here including:
 • Job title and company information
 • Job responsibilities and duties
@@ -523,7 +406,7 @@ Tip: Raw text is fine - use 'Format Text' to clean it up!"
                     style={{
                       border: 'none',
                       resize: 'vertical',
-                      minHeight: '300px',
+                      minHeight: '200px',
                       fontSize: '14px',
                       lineHeight: '1.6',
                       fontFamily: '"SF Mono", "Monaco", "Inconsolata", "Roboto Mono", monospace',
@@ -544,6 +427,225 @@ Tip: Raw text is fine - use 'Format Text' to clean it up!"
                 </div>
               </div>
             </div>
+
+            <div className="grid grid-2" style={{ gap: '24px' }}>
+              {/* Left Column */}
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
+                  <Building2 size={16} style={{ display: 'inline', marginRight: '8px' }} />
+                  Company & Position
+                </h3>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    Company <span style={{ color: '#ef4444', fontWeight: 'bold' }}>*</span>
+                  </label>
+                  <select
+                    className={`form-input ${errors.company_id ? 'border-red-500' : ''}`}
+                    style={errors.company_id ? { borderColor: '#ef4444' } : {}}
+                    {...register('company_id', { required: 'Company is required' })}
+                  >
+                    <option value="">Select a company</option>
+                    {companies?.companies?.map(company => (
+                      <option key={company.id} value={company.id}>
+                        {company.name}
+                      </option>
+                    ))}
+                  </select>
+                  {errors.company_id && (
+                    <div style={{ color: '#ef4444', fontSize: '14px', marginTop: '4px' }}>
+                      {errors.company_id.message}
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    Position Title <span style={{ color: '#ef4444', fontWeight: 'bold' }}>*</span>
+                  </label>
+                  <input
+                    type="text"
+                    className={`form-input ${errors.position_title ? 'border-red-500' : ''}`}
+                    style={errors.position_title ? { borderColor: '#ef4444' } : {}}
+                    placeholder="e.g., Senior Software Engineer"
+                    {...register('position_title', { required: 'Position title is required' })}
+                  />
+                  {errors.position_title && (
+                    <div style={{ color: '#ef4444', fontSize: '14px', marginTop: '4px' }}>
+                      {errors.position_title.message}
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    Application Source <span style={{ color: '#ef4444', fontWeight: 'bold' }}>*</span>
+                  </label>
+                  <SearchableDropdown
+                    options={applicationSourceOptions}
+                    value={watch('application_source') || ''}
+                    onChange={(value) => {
+                      setValue('application_source', value);
+                      trigger('application_source');
+                    }}
+                    placeholder="Select application source..."
+                    required
+                    error={errors.application_source?.message}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Location</label>
+                  <SearchableDropdown
+                    options={locationOptions}
+                    value={watch('job_location') || ''}
+                    onChange={(value) => setValue('job_location', value)}
+                    placeholder="Select job location..."
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">
+                    Resume Version Used <span style={{ color: '#ef4444', fontWeight: 'bold' }}>*</span>
+                  </label>
+                  <SearchableDropdown
+                    options={resumeVersions?.resume_versions?.map(version => ({
+                      value: version.id.toString(),
+                      label: `${version.version_name}${version.is_master ? ' (Master)' : ''}`
+                    })) || []}
+                    value={watch('resume_version_id') || ''}
+                    onChange={(value) => {
+                      setValue('resume_version_id', value);
+                      trigger('resume_version_id');
+                    }}
+                    placeholder="Select resume version..."
+                    required
+                    error={errors.resume_version_id?.message}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Recruiter Contact (Optional)</label>
+                  <SearchableDropdown
+                    options={recruiters?.recruiters?.map(recruiter => ({
+                      value: recruiter.id.toString(),
+                      label: `${recruiter.name} - ${recruiter.company || 'Independent'}`,
+                      details: recruiter.specialties ? `Specializes in: ${recruiter.specialties}` : null,
+                      contact: recruiter.email || recruiter.phone
+                    })) || []}
+                    value={watch('recruiter_id') || ''}
+                    onChange={(value) => setValue('recruiter_id', value)}
+                    placeholder="Select recruiter contact..."
+                    renderOption={(option) => (
+                      <div style={{ padding: '8px 0' }}>
+                        <div style={{ fontWeight: '500', color: '#1f2937' }}>
+                          {option.label}
+                        </div>
+                        {option.details && (
+                          <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
+                            {option.details}
+                          </div>
+                        )}
+                        {option.contact && (
+                          <div style={{ fontSize: '12px', color: '#3b82f6', marginTop: '2px' }}>
+                            📧 {option.contact}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  />
+                  <div style={{
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    lineHeight: '1.4'
+                  }}>
+                    💡 When you select a recruiter, we'll automatically track that you shared your selected resume version with them.
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Application Date</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    defaultValue={new Date().toISOString().split('T')[0]}
+                    {...register('application_date')}
+                  />
+                </div>
+              </div>
+
+              {/* Right Column */}
+              <div>
+                <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
+                  <DollarSign size={16} style={{ display: 'inline', marginRight: '8px' }} />
+                  Job Details
+                </h3>
+
+                <div className="grid grid-2" style={{ gap: '12px' }}>
+                  <div className="form-group">
+                    <label className="form-label">Salary Min ($)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="e.g., 120000"
+                      {...register('salary_min')}
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label className="form-label">Salary Max ($)</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="e.g., 150000"
+                      {...register('salary_max')}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Work Type</label>
+                  <select className="form-input" {...register('is_remote')}>
+                    <option value="">Not specified</option>
+                    <option value="true">Remote</option>
+                    <option value="false">On-site</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Location</label>
+                  <input
+                    type="text"
+                    className="form-input"
+                    placeholder="e.g., San Francisco, CA"
+                    {...register('location')}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Job Posting URL</label>
+                  <input
+                    type="url"
+                    className="form-input"
+                    placeholder="https://..."
+                    {...register('job_board_url')}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Initial Status</label>
+                  <select className="form-input" {...register('status')} defaultValue="applied">
+                    <option value="applied">Applied</option>
+                    <option value="phone_screen">Phone Screen Scheduled</option>
+                    <option value="interview">Interview Scheduled</option>
+                    <option value="offer">Offer Received</option>
+                    <option value="rejected">Rejected</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
 
             {/* Notes Section */}
             <div style={{ marginTop: '24px' }}>

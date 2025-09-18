@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useQuery } from 'react-query';
 import {
@@ -10,13 +10,14 @@ import {
   MapPin,
   User,
   Mail,
-  Phone,
   ExternalLink
 } from 'lucide-react';
 import { format } from 'date-fns';
+import ApplicationTimeline from '../components/ApplicationTimeline';
 
 const ApplicationDetail = () => {
   const { id } = useParams();
+  const [showResumeModal, setShowResumeModal] = useState(false);
 
   const { data, isLoading, error } = useQuery(
     ['application', id],
@@ -180,7 +181,11 @@ const ApplicationDetail = () => {
                 <div style={{ fontWeight: '600', color: '#1f2937' }}>
                   {app.resume_version}
                 </div>
-                <button className="btn btn-secondary" style={{ fontSize: '12px', padding: '4px 8px' }}>
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12px', padding: '4px 8px' }}
+                  onClick={() => setShowResumeModal(true)}
+                >
                   View Resume
                 </button>
               </div>
@@ -235,6 +240,9 @@ const ApplicationDetail = () => {
             </InfoCard>
           )}
 
+          {/* Application Timeline */}
+          <ApplicationTimeline applicationId={id} />
+
           {/* Job Description */}
           {app.job_description && (
             <InfoCard title="Job Description">
@@ -284,6 +292,68 @@ const ApplicationDetail = () => {
           </InfoCard>
         </div>
       </div>
+
+      {/* Resume Modal */}
+      {showResumeModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            background: 'white',
+            maxWidth: '80vw',
+            maxHeight: '80vh',
+            width: '800px',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid #e2e8f0',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
+                {app.resume_version}
+              </h3>
+              <button
+                onClick={() => setShowResumeModal(false)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  fontSize: '24px',
+                  cursor: 'pointer',
+                  color: '#6b7280'
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{
+              padding: '24px',
+              overflow: 'auto',
+              flex: 1,
+              fontSize: '14px',
+              lineHeight: '1.6',
+              whiteSpace: 'pre-wrap',
+              fontFamily: 'monospace'
+            }}>
+              {app.resume_content || 'Resume content not available'}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
