@@ -365,24 +365,71 @@ def get_resume_version(version_id):
 def update_resume_version(version_id):
     """Update resume version by ID"""
     try:
-        data = request.get_json()
+        print(f"🔍 [DEBUG] Resume version update request received for ID: {version_id}")
+        print(f"🔍 [DEBUG] Content type: {request.content_type}")
 
         # Check if version exists
         existing_version = db.get_resume_version(version_id)
         if not existing_version:
             return jsonify({'error': 'Resume version not found'}), 404
 
-        # Handle file upload if provided
-        s3_key = existing_version.get('s3_key')
-        if 'file_path' in data and data['file_path']:
-            s3_key = s3.upload_resume(data['file_path'], data['version_name'])
+        # Handle both JSON and multipart form data
+        if request.content_type and 'multipart/form-data' in request.content_type:
+            print(f"🔍 [DEBUG] Processing multipart form data with file upload")
+
+            # Extract form data
+            data = {}
+            for key in request.form.keys():
+                value = request.form[key]
+                if key == 'skills_emphasized':
+                    try:
+                        data[key] = json.loads(value) if value else []
+                    except:
+                        data[key] = value.split(',') if value else []
+                else:
+                    data[key] = value
+
+            print(f"🔍 [DEBUG] Form data: {data}")
+
+            # Handle file upload
+            s3_key = existing_version.get('s3_key')
+            uploaded_file = request.files.get('file')
+
+            if uploaded_file and uploaded_file.filename:
+                print(f"🔍 [DEBUG] File uploaded: {uploaded_file.filename}")
+
+                # Save file temporarily
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pdf') as tmp_file:
+                    uploaded_file.save(tmp_file.name)
+                    temp_file_path = tmp_file.name
+
+                try:
+                    # Upload to S3
+                    s3_key = s3.upload_resume(temp_file_path, data['version_name'])
+                    print(f"🔍 [DEBUG] File uploaded to S3: {s3_key}")
+                finally:
+                    # Clean up temp file
+                    os.unlink(temp_file_path)
+
+                # Use uploaded filename
+                filename = uploaded_file.filename
+            else:
+                print(f"🔍 [DEBUG] No file uploaded, keeping existing file info")
+                filename = existing_version.get('filename')
+        else:
+            print(f"🔍 [DEBUG] Processing JSON data (no file upload)")
+            data = request.get_json()
+            s3_key = existing_version.get('s3_key')
+            filename = existing_version.get('filename')
 
         # Update the version
         update_data = {
             'version_id': version_id,
-            'filename': data.get('file_path', existing_version['filename']),
+            'filename': filename,
             'version_name': data['version_name'],
-            'content_text': data.get('content_text', existing_version['content_text']),
+            'content_text': data.get('content_text', existing_version.get('content_text', '')),
             's3_key': s3_key,
             'skills_emphasized': data.get('skills_emphasized', []),
             'target_roles': data.get('target_roles'),
@@ -390,10 +437,13 @@ def update_resume_version(version_id):
             'description': data.get('description')
         }
 
+        print(f"🔍 [DEBUG] Update data: {update_data}")
+
         db.update_resume_version(**update_data)
         version = db.get_resume_version(version_id)
         return jsonify({'resume_version': version})
     except Exception as e:
+        print(f"❌ [ERROR] Error updating resume version: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
 @app.route('/api/resume-versions/success-metrics', methods=['GET'])

@@ -35,9 +35,16 @@ const ResumeVersionForm = ({ version, onClose }) => {
       return response.json();
     },
     {
-      onSuccess: () => {
-        queryClient.invalidateQueries('resume-versions');
-        queryClient.invalidateQueries('resume-metrics');
+      onSuccess: async () => {
+        console.log('🔍 [DEBUG] Resume version update successful, invalidating cache...');
+        await queryClient.invalidateQueries('resume-versions');
+        await queryClient.invalidateQueries('resume-metrics');
+
+        // Force a refetch to ensure UI updates immediately
+        console.log('🔍 [DEBUG] Forcing refetch of resume versions...');
+        await queryClient.refetchQueries('resume-versions');
+
+        console.log('🔍 [DEBUG] Cache invalidation complete, closing form...');
         onClose();
       },
     }
@@ -71,21 +78,32 @@ const ResumeVersionForm = ({ version, onClose }) => {
           }
         });
 
-        // Send form data with file
-        const response = await fetch('/api/resume-versions', {
-          method: 'POST',
+        // Send form data with file - use proper method and URL for updates
+        const url = version ? `/api/resume-versions/${version.id}` : '/api/resume-versions';
+        const method = version ? 'PUT' : 'POST';
+
+        const response = await fetch(url, {
+          method,
           body: formDataWithFile,
         });
 
         if (!response.ok) {
-          throw new Error('Failed to upload resume');
+          throw new Error(version ? 'Failed to update resume version' : 'Failed to upload resume');
         }
 
         const result = await response.json();
         console.log('🔍 [DEBUG] Upload result:', result);
 
         // Invalidate queries to refresh data
-        queryClient.invalidateQueries('resume-versions');
+        console.log('🔍 [DEBUG] File upload successful, invalidating cache...');
+        await queryClient.invalidateQueries('resume-versions');
+        await queryClient.invalidateQueries('resume-metrics');
+
+        // Force a refetch to ensure UI updates immediately
+        console.log('🔍 [DEBUG] Forcing refetch of resume versions...');
+        await queryClient.refetchQueries('resume-versions');
+
+        console.log('🔍 [DEBUG] Cache invalidation complete, closing form...');
         onClose();
       } else {
         // No file, use regular JSON submission
