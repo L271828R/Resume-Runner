@@ -1,0 +1,368 @@
+import React, { useState } from 'react';
+import { useMutation, useQueryClient } from 'react-query';
+import { X, Upload, FileText } from 'lucide-react';
+
+const ResumeVersionForm = ({ version, onClose }) => {
+  const [formData, setFormData] = useState({
+    version_name: version?.version_name || '',
+    description: version?.description || '',
+    target_roles: version?.target_roles || '',
+    skills_emphasized: version?.skills_emphasized ? version.skills_emphasized.join(', ') : '',
+    is_master: version?.is_master || false
+  });
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const queryClient = useQueryClient();
+
+  const createMutation = useMutation(
+    async (data) => {
+      const url = version ? `/api/resume-versions/${version.id}` : '/api/resume-versions';
+      const method = version ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        throw new Error(version ? 'Failed to update resume version' : 'Failed to create resume version');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('resume-versions');
+        queryClient.invalidateQueries('resume-metrics');
+        onClose();
+      },
+    }
+  );
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+
+    try {
+      const submitData = {
+        ...formData,
+        skills_emphasized: formData.skills_emphasized
+          ? formData.skills_emphasized.split(',').map(skill => skill.trim())
+          : []
+      };
+
+      // For now, don't include file_path since we don't have actual file upload implemented
+      // The backend will work in stub mode without a file
+
+      await createMutation.mutateAsync(submitData);
+    } catch (error) {
+      console.error('Error creating resume version:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0];
+    setSelectedFile(file);
+  };
+
+  const handleInputChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000
+    }}>
+      <div style={{
+        backgroundColor: 'white',
+        borderRadius: '8px',
+        padding: '24px',
+        width: '100%',
+        maxWidth: '600px',
+        maxHeight: '90vh',
+        overflowY: 'auto',
+        margin: '20px'
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: '24px'
+        }}>
+          <h2 style={{
+            margin: 0,
+            fontSize: '24px',
+            fontWeight: '600',
+            color: '#1f2937'
+          }}>
+            {version ? 'Edit Resume Version' : 'Add Resume Version'}
+          </h2>
+          <button
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              padding: '4px',
+              color: '#6b7280'
+            }}
+          >
+            <X size={24} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              marginBottom: '6px'
+            }}>
+              Version Name *
+            </label>
+            <input
+              type="text"
+              name="version_name"
+              value={formData.version_name}
+              onChange={handleInputChange}
+              required
+              placeholder="e.g., Data Science v2, Backend Engineer v1"
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              marginBottom: '6px'
+            }}>
+              Description
+            </label>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              placeholder="Brief description of what makes this version unique"
+              rows={3}
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px',
+                resize: 'vertical'
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              marginBottom: '6px'
+            }}>
+              Target Roles
+            </label>
+            <input
+              type="text"
+              name="target_roles"
+              value={formData.target_roles}
+              onChange={handleInputChange}
+              placeholder="e.g., Data Scientist, Backend Engineer, Full Stack Developer"
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              marginBottom: '6px'
+            }}>
+              Skills Emphasized
+            </label>
+            <input
+              type="text"
+              name="skills_emphasized"
+              value={formData.skills_emphasized}
+              onChange={handleInputChange}
+              placeholder="Python, React, AWS, Machine Learning (comma-separated)"
+              style={{
+                width: '100%',
+                padding: '8px 12px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '14px'
+              }}
+            />
+            <p style={{
+              fontSize: '12px',
+              color: '#6b7280',
+              margin: '4px 0 0 0'
+            }}>
+              Separate skills with commas
+            </p>
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              cursor: 'pointer'
+            }}>
+              <input
+                type="checkbox"
+                name="is_master"
+                checked={formData.is_master}
+                onChange={handleInputChange}
+                style={{ margin: 0 }}
+              />
+              Set as master version
+            </label>
+            <p style={{
+              fontSize: '12px',
+              color: '#6b7280',
+              margin: '4px 0 0 24px'
+            }}>
+              The master version is your default resume
+            </p>
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              marginBottom: '6px'
+            }}>
+              Resume File (Optional)
+            </label>
+            <div style={{
+              border: '2px dashed #d1d5db',
+              borderRadius: '4px',
+              padding: '20px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              backgroundColor: selectedFile ? '#f9fafb' : 'white'
+            }}>
+              <input
+                type="file"
+                onChange={handleFileChange}
+                accept=".pdf,.doc,.docx"
+                style={{ display: 'none' }}
+                id="file-upload"
+              />
+              <label htmlFor="file-upload" style={{ cursor: 'pointer' }}>
+                {selectedFile ? (
+                  <div>
+                    <FileText size={24} style={{ color: '#10b981', marginBottom: '8px' }} />
+                    <p style={{ margin: '0 0 4px 0', fontWeight: '500', color: '#1f2937' }}>
+                      {selectedFile.name}
+                    </p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
+                      Click to change file
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <Upload size={24} style={{ color: '#6b7280', marginBottom: '8px' }} />
+                    <p style={{ margin: '0 0 4px 0', color: '#374151' }}>
+                      Click to upload resume (optional)
+                    </p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
+                      PDF, DOC, or DOCX files only • File upload coming soon
+                    </p>
+                  </div>
+                )}
+              </label>
+            </div>
+          </div>
+
+          <div style={{
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: '12px'
+          }}>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSubmitting}
+              style={{
+                padding: '8px 16px',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                backgroundColor: 'white',
+                color: '#374151',
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer'
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting || !formData.version_name}
+              className="btn btn-primary"
+              style={{
+                opacity: isSubmitting || !formData.version_name ? 0.5 : 1
+              }}
+            >
+              {isSubmitting
+                ? (version ? 'Updating...' : 'Creating...')
+                : (version ? 'Update Resume Version' : 'Create Resume Version')
+              }
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+export default ResumeVersionForm;
