@@ -1,60 +1,53 @@
 """
 Pytest configuration and shared fixtures for Resume Runner backend tests
 """
-import pytest
 import os
-import tempfile
 import shutil
-from unittest.mock import Mock, patch
 import sys
+from importlib import import_module, reload
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import pytest
 
 # Add the parent directory to Python path to import our modules
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+REPO_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO_ROOT))
 
 from database.db_helper import ResumeRunnerDB
-from s3_helper import S3Helper
+
+TEST_DB_TEMPLATE = Path(os.environ.get('TEST_DB_TEMPLATE', REPO_ROOT / 'database' / 'resume_runner.db'))
+
+
+def _copy_template_db(destination: Path) -> None:
+    if not TEST_DB_TEMPLATE.exists():
+        raise FileNotFoundError(
+            f"Test database template not found at {TEST_DB_TEMPLATE}. "
+            "Run 'python database/create_database.py' to create it."
+        )
+    shutil.copyfile(TEST_DB_TEMPLATE, destination)
 
 
 @pytest.fixture
-def temp_db():
-    """Create a temporary database for testing"""
-    temp_dir = tempfile.mkdtemp()
-    db_path = os.path.join(temp_dir, 'test_resume_runner.db')
-
-    # Create test database
-    db = ResumeRunnerDB(db_path)
-
-    yield db
-
-    # Cleanup - close database connections
-    try:
-        db.get_connection().close()
-    except Exception:
-        pass  # Connection might already be closed
-
-    # Remove temporary directory
-    shutil.rmtree(temp_dir, ignore_errors=True)
+def test_db_path(tmp_path):
+    """Copy the main database to a temporary location for a test."""
+    temp_db_path = tmp_path / 'test_resume_runner.db'
+    _copy_template_db(temp_db_path)
+    return str(temp_db_path)
 
 
 @pytest.fixture
-def fresh_db():
-    """Create a fresh database for each test (no shared data)"""
-    temp_dir = tempfile.mkdtemp()
-    db_path = os.path.join(temp_dir, 'fresh_test_db.db')
+def temp_db(test_db_path):
+    """Database helper pointing to the temporary test copy."""
+    return ResumeRunnerDB(test_db_path)
 
-    # Create fresh database
-    db = ResumeRunnerDB(db_path)
 
-    yield db
-
-    # Cleanup
-    try:
-        db.get_connection().close()
-    except Exception:
-        pass
-
-    shutil.rmtree(temp_dir, ignore_errors=True)
-
+@pytest.fixture
+def fresh_db(tmp_path):
+    """Create a fresh database copy for each test."""
+    db_path = tmp_path / 'fresh_test_db.db'
+    _copy_template_db(db_path)
+    return ResumeRunnerDB(str(db_path))
 
 @pytest.fixture
 def sample_company_data():
@@ -145,13 +138,26 @@ def mock_s3_helper():
 
 
 @pytest.fixture
-def flask_app():
-    """Create Flask app for testing"""
-    # Import here to avoid circular imports
-    from server import app
-    app.config['TESTING'] = True
-    return app
+def flask_app(test_db_path, mock_s3_helper):
+    """Create Flask app backed by the temporary test database."""
+    original_db_env = os.environ.get('DATABASE_PATH')
+    os.environ['DATABASE_PATH'] = test_db_path
 
+    if 'server' in sys.modules:
+        server_module = reload(sys.modules['server'])
+    else:
+        server_module = import_module('server')
+
+    server_module.db = ResumeRunnerDB(test_db_path)
+    server_module.app.config['TESTING'] = True
+
+    try:
+        yield server_module.app
+    finally:
+        if original_db_env is None:
+            os.environ.pop('DATABASE_PATH', None)
+        else:
+            os.environ['DATABASE_PATH'] = original_db_env
 
 @pytest.fixture
 def client(flask_app):

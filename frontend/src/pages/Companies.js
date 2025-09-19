@@ -17,15 +17,22 @@ import {
   CheckCircle,
   XCircle,
   Clock,
-  Edit
+  Edit,
+  Star
 } from 'lucide-react';
 import { format } from 'date-fns';
 import CompanyForm from '../components/CompanyForm';
+import CompanyEventsModal from '../components/CompanyEventsModal';
+import CompanyEventSummary from '../components/CompanyEventSummary';
 
 const Companies = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCompanyForm, setShowCompanyForm] = useState(false);
   const [companyToEdit, setCompanyToEdit] = useState(null);
+  const [showEventsModal, setShowEventsModal] = useState(false);
+  const [companyForEvents, setCompanyForEvents] = useState(null);
+  const [sortOption, setSortOption] = useState('name');
+  const [showStarredOnly, setShowStarredOnly] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -86,9 +93,36 @@ const Companies = () => {
     }
   );
 
+  const toggleCompanyStarMutation = useMutation(
+    async ({ id, is_starred }) => {
+      const response = await fetch(`/api/companies/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_starred })
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to update company');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('companies');
+      }
+    }
+  );
+
   const handleEditCompany = (company) => {
     setCompanyToEdit(company);
     setShowCompanyForm(true);
+  };
+
+  const handleShowCompanyEvents = (company) => {
+    setCompanyForEvents(company);
+    setShowEventsModal(true);
   };
 
   if (isLoading) return <div>Loading companies...</div>;
@@ -96,10 +130,37 @@ const Companies = () => {
 
   const companies = data?.companies || [];
 
-  const filteredCompanies = companies.filter(company =>
-    company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (company.industry && company.industry.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredCompanies = companies.filter(company => {
+    const matchesSearch =
+      company.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (company.industry && company.industry.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    const matchesStar = !showStarredOnly || company.is_starred;
+
+    return matchesSearch && matchesStar;
+  });
+
+  const parseDate = (value) => {
+    if (!value) return 0;
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  };
+
+  const sortedCompanies = [...filteredCompanies].sort((a, b) => {
+    const starCompare = Number(b.is_starred) - Number(a.is_starred);
+    if (starCompare !== 0) {
+      return starCompare;
+    }
+
+    if (sortOption === 'updated' || sortOption === 'starred') {
+      const updatedCompare = parseDate(b.updated_at) - parseDate(a.updated_at);
+      if (updatedCompare !== 0) {
+        return updatedCompare;
+      }
+    }
+
+    return a.name.localeCompare(b.name);
+  });
 
   const getHiringFrequencyColor = (frequency) => {
     switch (frequency) {
@@ -148,32 +209,54 @@ const Companies = () => {
 
       {/* Search */}
       <div className="card" style={{ marginBottom: '24px' }}>
-        <div style={{ position: 'relative', maxWidth: '400px' }}>
-          <Search
-            size={16}
-            style={{
-              position: 'absolute',
-              left: '12px',
-              top: '50%',
-              transform: 'translateY(-50%)',
-              color: '#6b7280'
-            }}
-          />
-          <input
-            type="text"
-            placeholder="Search companies or industries..."
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', alignItems: 'center' }}>
+          <div style={{ position: 'relative', maxWidth: '400px', flex: '1 1 200px' }}>
+            <Search
+              size={16}
+              style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#6b7280'
+              }}
+            />
+            <input
+              type="text"
+              placeholder="Search companies or industries..."
+              className="form-input"
+              style={{ paddingLeft: '40px' }}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+
+          <select
             className="form-input"
-            style={{ paddingLeft: '40px' }}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+            style={{ width: 'auto', minWidth: '160px' }}
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value)}
+          >
+            <option value="name">Sort by Name</option>
+            <option value="updated">Sort by Last Updated</option>
+            <option value="starred">Starred First</option>
+          </select>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#4b5563' }}>
+            <input
+              type="checkbox"
+              checked={showStarredOnly}
+              onChange={(e) => setShowStarredOnly(e.target.checked)}
+            />
+            Starred only
+          </label>
         </div>
       </div>
 
       {/* Companies Grid */}
-      {filteredCompanies.length > 0 ? (
+      {sortedCompanies.length > 0 ? (
         <div className="grid grid-2" style={{ gap: '24px' }}>
-          {filteredCompanies.map((company) => (
+          {sortedCompanies.map((company) => (
             <div key={company.id} className="card">
               <div style={{
                 display: 'flex',
@@ -196,24 +279,34 @@ const Companies = () => {
                     }}>
                       {company.name}
                     </h3>
-                    {company.is_remote_friendly && (
-                      <span style={{
-                        background: '#dcfce7',
-                        color: '#16a34a',
-                        padding: '2px 8px',
-                        borderRadius: '4px',
-                        fontSize: '12px',
-                        fontWeight: '500'
-                      }}>
-                        Remote Friendly
-                      </span>
-                    )}
-                  </div>
+                  {company.is_remote_friendly && (
+                    <span style={{
+                      background: '#dcfce7',
+                      color: '#16a34a',
+                      padding: '2px 8px',
+                      borderRadius: '4px',
+                      fontSize: '12px',
+                      fontWeight: '500'
+                    }}>
+                      Remote Friendly
+                    </span>
+                  )}
+                </div>
 
+                {company.updated_at && (
                   <div style={{
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '4px',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    marginBottom: '12px'
+                  }}>
+                    Updated {format(new Date(company.updated_at), 'MMM d, yyyy')}
+                  </div>
+                )}
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '4px',
                     marginBottom: '12px'
                   }}>
                     {company.industry && (
@@ -248,26 +341,56 @@ const Companies = () => {
                     )}
                   </div>
 
-                  {company.website && (
-                    <a
-                      href={company.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        color: '#3b82f6',
-                        textDecoration: 'none',
-                        fontSize: '14px',
-                        marginBottom: '16px'
-                      }}
-                    >
-                      Visit Website <ExternalLink size={12} />
-                    </a>
-                  )}
+                {company.website && (
+                  <a
+                    href={company.website}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#3b82f6',
+                      textDecoration: 'none',
+                      fontSize: '14px',
+                      marginBottom: '16px'
+                    }}
+                  >
+                    Visit Website <ExternalLink size={12} />
+                  </a>
+                )}
+              </div>
+
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'flex-end',
+                  gap: '8px'
+                }}>
+                  <button
+                    onClick={() => toggleCompanyStarMutation.mutate({ id: company.id, is_starred: company.is_starred ? 0 : 1 })}
+                    className="btn btn-secondary"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    aria-label={company.is_starred ? 'Unstar company' : 'Star company'}
+                    disabled={toggleCompanyStarMutation.isLoading}
+                  >
+                    <Star
+                      size={14}
+                      style={{ color: company.is_starred ? '#facc15' : '#d1d5db' }}
+                      fill={company.is_starred ? '#facc15' : 'none'}
+                    />
+                    {company.is_starred ? 'Starred' : 'Star'}
+                  </button>
                 </div>
               </div>
+
+              <CompanyEventSummary companyId={company.id} />
 
               {/* Company Activity Stats */}
               <div style={{
@@ -437,6 +560,14 @@ const Companies = () => {
                 gap: '8px',
                 marginTop: '16px'
               }}>
+                <button
+                  onClick={() => handleShowCompanyEvents(company)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '12px' }}
+                >
+                  <Briefcase size={12} style={{ marginRight: '4px' }} />
+                  View Timeline
+                </button>
                 <Link
                   to={`/companies/${company.id}`}
                   className="btn btn-secondary"
@@ -489,7 +620,7 @@ const Companies = () => {
       )}
 
       {/* Summary Stats */}
-      {filteredCompanies.length > 0 && !searchTerm && (
+      {sortedCompanies.length > 0 && !searchTerm && (
         <div className="card" style={{ marginTop: '32px' }}>
           <h2 style={{
             margin: '0 0 24px 0',
@@ -548,6 +679,16 @@ const Companies = () => {
             : createCompanyMutation.mutateAsync(formValues)
         }
       />
+
+      {showEventsModal && companyForEvents && (
+        <CompanyEventsModal
+          company={companyForEvents}
+          onClose={() => {
+            setShowEventsModal(false);
+            setCompanyForEvents(null);
+          }}
+        />
+      )}
     </div>
   );
 };

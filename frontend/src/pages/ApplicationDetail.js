@@ -13,7 +13,9 @@ import {
   ExternalLink,
   RotateCw,
   Trash2,
-  XCircle
+  XCircle,
+  Globe,
+  Briefcase
 } from 'lucide-react';
 import { format } from 'date-fns';
 import ApplicationTimeline from '../components/ApplicationTimeline';
@@ -23,6 +25,62 @@ const ApplicationDetail = () => {
   const [showResumeModal, setShowResumeModal] = useState(false);
   const [showChangeResumeModal, setShowChangeResumeModal] = useState(false);
   const [selectedResumeId, setSelectedResumeId] = useState('');
+  const [formValues, setFormValues] = useState({
+    job_location: '',
+    is_remote: 'unknown',
+    application_source: '',
+    salary_min: '',
+    salary_max: '',
+    job_url: '',
+    notes: '',
+    job_posting_text: ''
+  });
+
+  const deriveRemoteOption = (value) => {
+    if (value === 1 || value === true || value === '1' || value === 'true' || value === 'remote') {
+      return 'remote';
+    }
+    if (value === 0 || value === false || value === '0' || value === 'false' || value === 'onsite') {
+      return 'onsite';
+    }
+    return 'unknown';
+  };
+
+  const remoteOptionToValue = (option) => {
+    if (option === 'remote') return 1;
+    if (option === 'onsite') return 0;
+    return null;
+  };
+
+  const convertFromApp = (application) => ({
+    job_location: application?.job_location || '',
+    is_remote: deriveRemoteOption(application?.is_remote),
+    application_source: application?.application_source || '',
+    salary_min: application?.salary_min != null ? String(application.salary_min) : '',
+    salary_max: application?.salary_max != null ? String(application.salary_max) : '',
+    job_url: application?.job_url || '',
+    notes: application?.notes || '',
+    job_posting_text: application?.job_posting_text || ''
+  });
+
+  const applicationSourceOptions = [
+    { value: 'indeed', label: 'Indeed' },
+    { value: 'linkedin', label: 'LinkedIn' },
+    { value: 'company_website', label: 'Company Website' },
+    { value: 'glassdoor', label: 'Glassdoor' },
+    { value: 'recruiter', label: 'Recruiter Contact' },
+    { value: 'referral', label: 'Employee Referral' },
+    { value: 'job_board', label: 'Other Job Board' },
+    { value: 'direct_application', label: 'Direct Application' },
+    { value: 'networking', label: 'Networking Event' },
+    { value: 'headhunter', label: 'Headhunter' }
+  ];
+
+  const getApplicationSourceLabel = (value) => {
+    if (!value) return 'Not specified';
+    const match = applicationSourceOptions.find(option => option.value === value);
+    return match ? match.label : value;
+  };
 
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -61,6 +119,37 @@ const ApplicationDetail = () => {
     }
   );
 
+  const updateApplicationMutation = useMutation(
+    async (payload) => {
+      const response = await fetch(`/api/applications/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'Failed to update application');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: async (data) => {
+        await queryClient.invalidateQueries(['application', id]);
+        await queryClient.invalidateQueries('applications');
+        const updatedApplication = data?.application;
+        if (updatedApplication) {
+          setFormValues(convertFromApp(updatedApplication));
+        }
+      },
+      onError: (error) => {
+        const message = error?.message || 'Failed to update application';
+        alert(message);
+      }
+    }
+  );
+
   const deleteApplicationMutation = useMutation(
     async () => {
       const response = await fetch(`/api/applications/${id}`, { method: 'DELETE' });
@@ -86,20 +175,102 @@ const ApplicationDetail = () => {
     }
   }, [showChangeResumeModal, app?.resume_version_id]);
 
+  useEffect(() => {
+    setFormValues(convertFromApp(app));
+  }, [app]);
+
   if (isLoading) return <div>Loading application details...</div>;
   if (error) return <div>Error loading application</div>;
   if (!app) return <div>Application not found</div>;
+
+  const remoteOption = deriveRemoteOption(app.is_remote);
+  const remoteDisplayLabel = remoteOption === 'remote'
+    ? 'Remote'
+    : remoteOption === 'onsite'
+      ? 'On-site'
+      : 'Not specified';
+  const locationDisplay = app.job_location && app.job_location.trim().length > 0
+    ? app.job_location
+    : 'Not specified';
+  const applicationSourceLabel = getApplicationSourceLabel(app.application_source);
+  const salaryDisplay = (() => {
+    const hasMin = typeof app.salary_min === 'number';
+    const hasMax = typeof app.salary_max === 'number';
+    if (hasMin && hasMax) {
+      return `$${app.salary_min.toLocaleString()} - $${app.salary_max.toLocaleString()}`;
+    }
+    if (hasMin) {
+      return `Min $${app.salary_min.toLocaleString()}`;
+    }
+    if (hasMax) {
+      return `Max $${app.salary_max.toLocaleString()}`;
+    }
+    return 'Not specified';
+  })();
+  const jobUrlDisplay = app.job_url && app.job_url.trim().length > 0 ? app.job_url : null;
+  const notesDisplay = app.notes && app.notes.trim().length > 0 ? app.notes : 'No internal notes yet.';
+
+  const handleMetaCancel = () => {
+    setMetaDraft({
+      job_location: app?.job_location || '',
+      is_remote: deriveRemoteOption(app?.is_remote)
+    });
+    setIsEditingMeta(false);
+  };
+
+  const handleMetaSave = () => {
+    const trimOrNull = (value) => {
+      if (value == null) return null;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    const toNumberOrNull = (value) => {
+      if (value == null) return null;
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const parsed = Number(trimmed);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    const applicationSourceValue = metaDraft.application_source && metaDraft.application_source.trim().length > 0
+      ? metaDraft.application_source
+      : null;
+
+    const payload = {
+      job_location: trimOrNull(metaDraft.job_location),
+      is_remote: remoteOptionToValue(metaDraft.is_remote),
+      application_source: applicationSourceValue,
+      salary_min: toNumberOrNull(metaDraft.salary_min),
+      salary_max: toNumberOrNull(metaDraft.salary_max),
+      job_url: trimOrNull(metaDraft.job_url),
+      notes: trimOrNull(metaDraft.notes)
+    };
+    updateApplicationMutation.mutate(payload);
+  };
 
   const getStatusBadge = (status) => {
     const statusClass = `status-badge status-${status}`;
     return <span className={statusClass}>{status.replace('_', ' ')}</span>;
   };
 
-  const InfoCard = ({ title, children }) => (
+  const InfoCard = ({ title, actions = null, children }) => (
     <div className="card">
-      <h3 style={{ margin: '0 0 16px 0', fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
-        {title}
-      </h3>
+      <div style={{
+        display: 'flex',
+        alignItems: actions ? 'center' : 'flex-start',
+        justifyContent: 'space-between',
+        marginBottom: '16px'
+      }}>
+        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
+          {title}
+        </h3>
+        {actions ? (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {actions}
+          </div>
+        ) : null}
+      </div>
       {children}
     </div>
   );
@@ -198,7 +369,42 @@ const ApplicationDetail = () => {
         {/* Left Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Application Details */}
-          <InfoCard title="Application Details">
+          <InfoCard
+            title="Application Details"
+            actions={
+              isEditingMeta ? (
+                <>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleMetaCancel}
+                    disabled={updateApplicationMutation.isLoading}
+                    style={{ fontSize: '12px', padding: '4px 10px' }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    onClick={handleMetaSave}
+                    disabled={updateApplicationMutation.isLoading}
+                    style={{ fontSize: '12px', padding: '4px 10px' }}
+                  >
+                    {updateApplicationMutation.isLoading ? 'Saving...' : 'Save Details'}
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ fontSize: '12px', padding: '4px 10px' }}
+                  onClick={() => setIsEditingMeta(true)}
+                >
+                  Edit Details
+                </button>
+              )
+            }
+          >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
               <InfoRow
                 icon={Building2}
@@ -223,23 +429,245 @@ const ApplicationDetail = () => {
                   value={format(new Date(app.response_date), 'MMMM d, yyyy')}
                 />
               )}
-              {app.salary_min && app.salary_max && (
-                <InfoRow
-                  icon={DollarSign}
-                  label="Salary Range"
-                  value={`$${app.salary_min.toLocaleString()} - $${app.salary_max.toLocaleString()}`}
+              <InfoRow
+                icon={DollarSign}
+                label="Salary"
+                value={salaryDisplay}
+              />
+              <InfoRow
+                icon={Briefcase}
+                label="Work Type"
+                value={remoteDisplayLabel}
+              />
+              <InfoRow
+                icon={MapPin}
+                label="Job Location"
+                value={locationDisplay}
+              />
+              <InfoRow
+                icon={Globe}
+                label="Application Source"
+                value={applicationSourceLabel}
+              />
+              <InfoRow
+                icon={ExternalLink}
+                label="Job Posting URL"
+                value={jobUrlDisplay || 'Not specified'}
+                link={jobUrlDisplay || undefined}
+              />
+            </div>
+
+            {isEditingMeta && (
+              <div style={{
+                marginTop: '16px',
+                padding: '16px',
+                border: '1px solid #e5e7eb',
+                borderRadius: '8px',
+                background: '#f9fafb',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '12px'
+              }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
+                  Work Type
+                </label>
+                <select
+                  className="form-input"
+                  value={metaDraft.is_remote}
+                  onChange={(e) => setMetaDraft(prev => ({ ...prev, is_remote: e.target.value }))}
+                >
+                  <option value="unknown">Not specified</option>
+                  <option value="remote">Remote</option>
+                  <option value="onsite">On-site</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
+                  Job Location
+                </label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={metaDraft.job_location}
+                  onChange={(e) => setMetaDraft(prev => ({ ...prev, job_location: e.target.value }))}
+                  placeholder="e.g., New York, NY or San Francisco, CA"
                 />
-              )}
-              {app.is_remote !== null && app.is_remote !== undefined && (
-                <InfoRow
-                  icon={MapPin}
-                  label="Work Type"
-                  value={app.is_remote ? 'Remote' : 'On-site'}
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
+                  Application Source
+                </label>
+                <select
+                  className="form-input"
+                  value={metaDraft.application_source}
+                  onChange={(e) => setMetaDraft(prev => ({ ...prev, application_source: e.target.value }))}
+                >
+                  <option value="">Select source</option>
+                  {applicationSourceOptions.map(option => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
+                    Salary Min
+                  </label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={metaDraft.salary_min}
+                    onChange={(e) => setMetaDraft(prev => ({ ...prev, salary_min: e.target.value }))}
+                    placeholder="e.g., 90000"
+                    min="0"
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
+                    Salary Max
+                  </label>
+                  <input
+                    type="number"
+                    className="form-input"
+                    value={metaDraft.salary_max}
+                    onChange={(e) => setMetaDraft(prev => ({ ...prev, salary_max: e.target.value }))}
+                    placeholder="e.g., 120000"
+                    min="0"
+                  />
+                </div>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
+                  Job Posting URL
+                </label>
+                <input
+                  type="url"
+                  className="form-input"
+                  value={metaDraft.job_url}
+                  onChange={(e) => setMetaDraft(prev => ({ ...prev, job_url: e.target.value }))}
+                  placeholder="https://company.com/job"
                 />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
+                  Internal Notes
+                </label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  style={{ resize: 'vertical' }}
+                  value={metaDraft.notes}
+                  onChange={(e) => setMetaDraft(prev => ({ ...prev, notes: e.target.value }))}
+                  placeholder="Add private notes about this application"
+                />
+              </div>
+            </div>
+          )}
+
+            <div style={{
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid #f3f4f6',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#1f2937' }}>
+                  Job Posting Snapshot
+                </span>
+                {!isEditingDescription && (
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: '12px', padding: '4px 10px' }}
+                    onClick={() => setIsEditingDescription(true)}
+                  >
+                    Edit
+                  </button>
+                )}
+              </div>
+
+              {isEditingDescription ? (
+                <>
+                  <textarea
+                    value={descriptionDraft}
+                    onChange={(e) => setDescriptionDraft(e.target.value)}
+                    rows={10}
+                    className="form-input"
+                    style={{ resize: 'vertical', minHeight: '160px' }}
+                    placeholder="Paste or write the job description here"
+                  />
+                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                    <button
+                      className="btn btn-secondary"
+                      type="button"
+                      onClick={() => {
+                        setDescriptionDraft(app?.job_posting_text || '');
+                        setIsEditingDescription(false);
+                      }}
+                      disabled={updateApplicationMutation.isLoading}
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      type="button"
+                      onClick={() => updateApplicationMutation.mutate({ job_posting_text: descriptionDraft })}
+                      disabled={updateApplicationMutation.isLoading}
+                    >
+                      {updateApplicationMutation.isLoading ? 'Saving...' : 'Save Description'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div style={{
+                  maxHeight: '220px',
+                  overflowY: 'auto',
+                  fontSize: '14px',
+                  lineHeight: '1.6',
+                  color: '#374151',
+                  whiteSpace: 'pre-wrap',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  background: '#f9fafb'
+                }}>
+                  {app.job_posting_text && app.job_posting_text.trim().length > 0
+                    ? app.job_posting_text
+                    : 'No description captured yet. Click Edit to add one.'}
+                </div>
               )}
             </div>
+
+            {!isEditingMeta && (
+              <div style={{
+                marginTop: '16px',
+                padding: '12px',
+                background: '#f8fafc',
+                borderRadius: '8px',
+                border: '1px solid #e5e7eb'
+              }}>
+                <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '6px', fontWeight: 600 }}>
+                  Internal Notes
+                </div>
+                <div style={{ fontSize: '14px', color: '#374151', lineHeight: 1.6 }}>
+                  {notesDisplay}
+                </div>
+              </div>
+            )}
           </InfoCard>
 
+        </div>
+
+        {/* Right Column */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Resume Information */}
           <InfoCard title="Resume Version Used">
             <div style={{
@@ -301,10 +729,7 @@ const ApplicationDetail = () => {
               )}
             </div>
           </InfoCard>
-        </div>
 
-        {/* Right Column */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Recruiter Information */}
           {app.recruiter_name && (
             <InfoCard title="Recruiter Contact">
@@ -328,22 +753,6 @@ const ApplicationDetail = () => {
 
           {/* Application Timeline */}
           <ApplicationTimeline applicationId={id} />
-
-          {/* Job Description Snapshot */}
-          {app.job_posting_text && (
-            <InfoCard title="Job Posting Snapshot">
-              <div style={{
-                maxHeight: '300px',
-                overflowY: 'auto',
-                fontSize: '14px',
-                lineHeight: '1.6',
-                color: '#374151',
-                whiteSpace: 'pre-wrap'
-              }}>
-                {app.job_posting_text}
-              </div>
-            </InfoCard>
-          )}
 
           {/* Notes */}
           {app.outcome_notes && (

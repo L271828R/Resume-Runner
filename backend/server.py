@@ -79,12 +79,14 @@ swagger_template = {
             "name": "Resume Runner",
         }
     },
-    "host": "localhost:5001",
     "basePath": "/api",
     "schemes": ["http"],
     "consumes": ["application/json"],
     "produces": ["application/json"],
 }
+
+backend_port = int(os.getenv('BACKEND_PORT', os.getenv('PORT', '5001')))
+swagger_template['host'] = f"localhost:{backend_port}"
 
 swagger = Swagger(app, config=swagger_config, template=swagger_template)
 
@@ -240,20 +242,13 @@ def update_company(company_id):
         if not existing_company:
             return jsonify({'error': 'Company not found'}), 404
 
-        data = request.get_json()
+        data = request.get_json() or {}
         print(f"🔍 [DEBUG] Update data: {data}")
 
-        # Update the company
-        success = db.update_company(
-            company_id=company_id,
-            name=data.get('name'),
-            website=data.get('website'),
-            industry=data.get('industry'),
-            company_size=data.get('company_size'),
-            headquarters=data.get('headquarters'),
-            is_remote_friendly=data.get('is_remote_friendly', False),
-            notes=data.get('notes')
-        )
+        if not data:
+            return jsonify({'error': 'No update fields supplied'}), 400
+
+        success = db.update_company(company_id, **data)
 
         if success:
             # Get updated company data
@@ -304,6 +299,76 @@ def get_company_details(company_id):
         return jsonify({'company': company})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/companies/<int:company_id>/events', methods=['GET'])
+def get_company_events(company_id):
+    """Get timeline events for a company"""
+    try:
+        events = db.get_company_events(company_id)
+        return jsonify({'events': events})
+    except Exception as e:
+        app_logger.error(f"Error in get_company_events: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/companies/<int:company_id>/events', methods=['POST'])
+def add_company_event(company_id):
+    """Add an event to a company timeline"""
+    try:
+        data = request.get_json() or {}
+        title = data.get('title')
+        if not title:
+            return jsonify({'error': 'title is required'}), 400
+
+        event_id = db.add_company_event(
+            company_id=company_id,
+            title=title,
+            event_type=data.get('event_type', 'note'),
+            event_date=data.get('event_date'),
+            description=data.get('description'),
+            follow_up_required=data.get('follow_up_required', False),
+            follow_up_date=data.get('follow_up_date')
+        )
+
+        events = db.get_company_events(company_id)
+        return jsonify({'event_id': event_id, 'events': events}), 201
+    except Exception as e:
+        app_logger.error(f"Error in add_company_event: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/company-events/<int:event_id>', methods=['PUT'])
+def update_company_event(event_id):
+    """Update a company timeline event"""
+    try:
+        data = request.get_json() or {}
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        success = db.update_company_event(event_id, **data)
+        if not success:
+            return jsonify({'error': 'Event not found or no changes made'}), 404
+
+        return jsonify({'event_id': event_id})
+    except Exception as e:
+        app_logger.error(f"Error in update_company_event: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/company-events/<int:event_id>', methods=['DELETE'])
+def delete_company_event(event_id):
+    """Delete a company timeline event"""
+    try:
+        success = db.delete_company_event(event_id)
+        if not success:
+            return jsonify({'error': 'Event not found'}), 404
+
+        return jsonify({'deleted': True})
+    except Exception as e:
+        app_logger.error(f"Error in delete_company_event: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/companies/search', methods=['GET'])
 def search_companies():
@@ -542,18 +607,22 @@ def update_resume_version(version_id):
             editable_filename = existing_version.get('editable_filename')
 
         # Update the version
+        version_name = data.get('version_name', existing_version.get('version_name'))
+        if not version_name:
+            raise ValueError('version_name is required')
+
         update_data = {
             'version_id': version_id,
             'filename': filename,
-            'version_name': data['version_name'],
+            'version_name': version_name,
             'content_text': data.get('content_text', existing_version.get('content_text', '')),
             's3_key': s3_key,
             'editable_s3_key': editable_s3_key,
             'editable_filename': editable_filename,
-            'skills_emphasized': data.get('skills_emphasized', []),
-            'target_roles': data.get('target_roles'),
-            'is_master': data.get('is_master', False),
-            'description': data.get('description')
+            'skills_emphasized': data.get('skills_emphasized', existing_version.get('skills_emphasized') or []),
+            'target_roles': data.get('target_roles', existing_version.get('target_roles')),
+            'is_master': data.get('is_master', existing_version.get('is_master', False)),
+            'description': data.get('description', existing_version.get('description'))
         }
 
         print(f"🔍 [DEBUG] Update data: {update_data}")
@@ -680,6 +749,76 @@ def add_recruiter_communication(recruiter_id):
         return jsonify({'communication_id': comm_id}), 201
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+
+@app.route('/api/recruiters/<int:recruiter_id>/events', methods=['GET'])
+def get_recruiter_events(recruiter_id):
+    """Get timeline events for a recruiter"""
+    try:
+        events = db.get_recruiter_events(recruiter_id)
+        return jsonify({'events': events})
+    except Exception as e:
+        app_logger.error(f"Error in get_recruiter_events: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/recruiters/<int:recruiter_id>/events', methods=['POST'])
+def add_recruiter_event(recruiter_id):
+    """Add an event to a recruiter timeline"""
+    try:
+        data = request.get_json() or {}
+        title = data.get('title')
+        if not title:
+            return jsonify({'error': 'title is required'}), 400
+
+        event_id = db.add_recruiter_event(
+            recruiter_id=recruiter_id,
+            title=title,
+            event_type=data.get('event_type', 'note'),
+            event_date=data.get('event_date'),
+            description=data.get('description'),
+            follow_up_required=data.get('follow_up_required', False),
+            follow_up_date=data.get('follow_up_date')
+        )
+
+        events = db.get_recruiter_events(recruiter_id)
+        return jsonify({'event_id': event_id, 'events': events}), 201
+    except Exception as e:
+        app_logger.error(f"Error in add_recruiter_event: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/recruiter-events/<int:event_id>', methods=['PUT'])
+def update_recruiter_event(event_id):
+    """Update a recruiter timeline event"""
+    try:
+        data = request.get_json() or {}
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+
+        success = db.update_recruiter_event(event_id, **data)
+        if not success:
+            return jsonify({'error': 'Event not found or no changes made'}), 404
+
+        return jsonify({'event_id': event_id})
+    except Exception as e:
+        app_logger.error(f"Error in update_recruiter_event: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/recruiter-events/<int:event_id>', methods=['DELETE'])
+def delete_recruiter_event(event_id):
+    """Delete a recruiter timeline event"""
+    try:
+        success = db.delete_recruiter_event(event_id)
+        if not success:
+            return jsonify({'error': 'Event not found'}), 404
+
+        return jsonify({'deleted': True})
+    except Exception as e:
+        app_logger.error(f"Error in delete_recruiter_event: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
 
 @app.route('/api/recruiters/dashboard', methods=['GET'])
 def get_recruiter_dashboard():
@@ -977,6 +1116,38 @@ def get_application(app_id):
         return jsonify({'application': application})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/applications/<int:app_id>', methods=['PUT'])
+def update_application(app_id):
+    """Update editable application fields"""
+    try:
+        data = request.get_json() or {}
+        allowed_fields = {
+            'job_posting_text',
+            'job_location',
+            'job_url',
+            'notes',
+            'outcome_notes',
+            'status',
+            'job_posting_id',
+            'is_remote'
+        }
+
+        update_payload = {k: v for k, v in data.items() if k in allowed_fields}
+        if not update_payload:
+            return jsonify({'error': 'No valid fields supplied'}), 400
+
+        success = db.update_application(app_id, **update_payload)
+
+        application = db.get_application_details(app_id)
+        if not application:
+            return jsonify({'error': 'Application not found'}), 404
+
+        return jsonify({'application': application, 'updated': bool(success)})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400
+
 
 @app.route('/api/applications/<int:app_id>/status', methods=['PUT'])
 def update_application_status(app_id):
@@ -1470,7 +1641,7 @@ if __name__ == '__main__':
     print("🚀 Starting Resume Runner Backend Server...")
     print(f"📊 Database: {db.db_path}")
     print(f"☁️  S3 Status: {s3.get_bucket_info()['status']}")
-    print("🌐 API available at: http://localhost:5001")
-    print("📚 API Documentation: http://localhost:5001/docs/")
+    print(f"🌐 API available at: http://localhost:{backend_port}")
+    print(f"📚 API Documentation: http://localhost:{backend_port}/docs/")
 
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=True, host='0.0.0.0', port=backend_port)

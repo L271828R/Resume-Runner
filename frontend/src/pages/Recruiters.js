@@ -17,12 +17,18 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import RecruiterForm from '../components/RecruiterForm';
+import RecruiterEventSummary from '../components/RecruiterEventSummary';
+import RecruiterEventsModal from '../components/RecruiterEventsModal';
 
 const Recruiters = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showRecruiterForm, setShowRecruiterForm] = useState(false);
   const [recruiterToEdit, setRecruiterToEdit] = useState(null);
+  const [showEventsModal, setShowEventsModal] = useState(false);
+  const [recruiterForEvents, setRecruiterForEvents] = useState(null);
+  const [sortOption, setSortOption] = useState('name');
+  const [showStarredOnly, setShowStarredOnly] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -83,9 +89,36 @@ const Recruiters = () => {
     }
   );
 
+  const toggleStarMutation = useMutation(
+    async ({ id, is_starred }) => {
+      const response = await fetch(`/api/recruiters/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_starred })
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to update recruiter');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('recruiter-dashboard');
+      }
+    }
+  );
+
   const handleEditRecruiter = (recruiter) => {
     setRecruiterToEdit(recruiter);
     setShowRecruiterForm(true);
+  };
+
+  const handleShowEvents = (recruiter) => {
+    setRecruiterForEvents(recruiter);
+    setShowEventsModal(true);
   };
 
   if (isLoading) return <div>Loading recruiters...</div>;
@@ -102,7 +135,31 @@ const Recruiters = () => {
 
     const matchesStatus = statusFilter === 'all' || recruiter.relationship_status === statusFilter;
 
-    return matchesSearch && matchesStatus;
+    const matchesStar = !showStarredOnly || recruiter.is_starred;
+
+    return matchesSearch && matchesStatus && matchesStar;
+  });
+
+  const parseDate = (value) => {
+    if (!value) return 0;
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  };
+
+  const sortedRecruiters = [...filteredRecruiters].sort((a, b) => {
+    const starCompare = Number(b.is_starred) - Number(a.is_starred);
+    if (starCompare !== 0) {
+      return starCompare;
+    }
+
+    if (sortOption === 'updated' || sortOption === 'starred') {
+      const updatedCompare = parseDate(b.updated_at) - parseDate(a.updated_at);
+      if (updatedCompare !== 0) {
+        return updatedCompare;
+      }
+    }
+
+    return a.name.localeCompare(b.name);
   });
 
   const getStatusColor = (status) => {
@@ -203,13 +260,35 @@ const Recruiters = () => {
               ))}
             </select>
           </div>
+
+          <div>
+            <select
+              className="form-input"
+              style={{ width: 'auto', minWidth: '160px' }}
+              value={sortOption}
+              onChange={(e) => setSortOption(e.target.value)}
+            >
+              <option value="name">Sort by Name</option>
+              <option value="updated">Sort by Last Updated</option>
+              <option value="starred">Starred First</option>
+            </select>
+          </div>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#4b5563' }}>
+            <input
+              type="checkbox"
+              checked={showStarredOnly}
+              onChange={(e) => setShowStarredOnly(e.target.checked)}
+            />
+            Starred only
+          </label>
         </div>
       </div>
 
       {/* Recruiters Grid */}
-      {filteredRecruiters.length > 0 ? (
+      {sortedRecruiters.length > 0 ? (
         <div className="grid grid-2" style={{ gap: '24px' }}>
-          {filteredRecruiters.map((recruiter) => (
+          {sortedRecruiters.map((recruiter) => (
             <div key={recruiter.id} className="card">
               <div style={{
                 display: 'flex',
@@ -234,6 +313,16 @@ const Recruiters = () => {
                   </h3>
                   {getStatusBadge(recruiter.relationship_status)}
                 </div>
+
+                {recruiter.updated_at && (
+                  <div style={{
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    marginBottom: '8px'
+                  }}>
+                    Updated {format(new Date(recruiter.updated_at), 'MMM d, yyyy')}
+                  </div>
+                )}
 
                 {recruiter.primary_contact_name && (
                   <div style={{
@@ -281,6 +370,27 @@ const Recruiters = () => {
                   alignItems: 'flex-end',
                   gap: '4px'
                 }}>
+                  <button
+                    onClick={() => toggleStarMutation.mutate({ id: recruiter.id, is_starred: recruiter.is_starred ? 0 : 1 })}
+                    className="btn btn-secondary"
+                    style={{
+                      padding: '4px 8px',
+                      fontSize: '12px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}
+                    aria-label={recruiter.is_starred ? 'Unstar recruiter' : 'Star recruiter'}
+                    disabled={toggleStarMutation.isLoading}
+                  >
+                    <Star
+                      size={14}
+                      style={{ color: recruiter.is_starred ? '#facc15' : '#d1d5db' }}
+                      fill={recruiter.is_starred ? '#facc15' : 'none'}
+                    />
+                    {recruiter.is_starred ? 'Starred' : 'Star' }
+                  </button>
+
                   {recruiter.success_rate > 0 && (
                     <div style={{
                       display: 'flex',
@@ -302,6 +412,8 @@ const Recruiters = () => {
                   )}
                 </div>
               </div>
+
+              <RecruiterEventSummary recruiterId={recruiter.id} />
 
               {/* Contact Information */}
               <div style={{
@@ -517,6 +629,14 @@ const Recruiters = () => {
                 display: 'flex',
                 gap: '8px'
               }}>
+                <button
+                  onClick={() => handleShowEvents(recruiter)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '12px' }}
+                >
+                  <MessageCircle size={12} style={{ marginRight: '4px' }} />
+                  View Timeline
+                </button>
                 <button className="btn btn-secondary" style={{ flex: 1, fontSize: '12px' }}>
                   Update Resume
                 </button>
@@ -563,7 +683,7 @@ const Recruiters = () => {
       )}
 
       {/* Summary Stats */}
-      {filteredRecruiters.length > 0 && !searchTerm && statusFilter === 'all' && (
+      {sortedRecruiters.length > 0 && !searchTerm && statusFilter === 'all' && (
         <div className="card" style={{ marginTop: '32px' }}>
           <h2 style={{
             margin: '0 0 24px 0',
@@ -625,6 +745,16 @@ const Recruiters = () => {
               ? updateRecruiterMutation.mutateAsync({ id: recruiterToEdit.id, ...formValues })
               : createRecruiterMutation.mutateAsync(formValues)
           }
+        />
+      )}
+
+      {showEventsModal && recruiterForEvents && (
+        <RecruiterEventsModal
+          recruiter={recruiterForEvents}
+          onClose={() => {
+            setShowEventsModal(false);
+            setRecruiterForEvents(null);
+          }}
         />
       )}
     </div>

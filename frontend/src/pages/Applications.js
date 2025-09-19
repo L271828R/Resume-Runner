@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
-import { Link } from 'react-router-dom';
-import { Plus, Eye, Search, Filter, Briefcase } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, Search, Filter, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
 import ApplicationForm from '../components/ApplicationForm';
 
@@ -9,6 +9,8 @@ const Applications = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showApplicationForm, setShowApplicationForm] = useState(false);
+
+  const navigate = useNavigate();
 
   const queryClient = useQueryClient();
 
@@ -89,10 +91,7 @@ const Applications = () => {
         </div>
         <button
           className="btn btn-primary"
-          onClick={() => {
-            console.log('Add Application button clicked');
-            setShowApplicationForm(true);
-          }}
+          onClick={() => setShowApplicationForm(true)}
         >
           <Plus size={16} />
           New Application
@@ -153,26 +152,56 @@ const Applications = () => {
                   <th>Resume Version</th>
                   <th>Applied</th>
                   <th>Status</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredApplications.map((app) => (
-                  <tr key={app.id}>
-                    <td>
-                      <div style={{ fontWeight: '500', color: '#1f2937' }}>
-                        {app.company_name}
-                      </div>
-                      {app.is_remote && (
-                        <div style={{ fontSize: '12px', color: '#10b981', fontWeight: '500' }}>
-                          Remote
+                {filteredApplications.map((app) => {
+                  const remoteValue = app.is_remote;
+                  const isRemote = remoteValue === true || remoteValue === 1 || remoteValue === '1';
+                  const isOnsite = remoteValue === false || remoteValue === 0 || remoteValue === '0';
+
+                  let workTypeLabel = 'Not specified';
+                  let workTypeColor = '#9ca3af';
+
+                  if (isRemote) {
+                    workTypeLabel = 'Remote';
+                    workTypeColor = '#10b981';
+                  } else if (isOnsite) {
+                    workTypeLabel = 'On-site';
+                    workTypeColor = '#6b7280';
+                  }
+
+                  return (
+                    <tr
+                      key={app.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => navigate(`/applications/${app.id}`)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          navigate(`/applications/${app.id}`);
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                    >
+                      <td>
+                        <div style={{ fontWeight: '500', color: '#1f2937' }}>
+                          {app.company_name}
                         </div>
-                      )}
-                    </td>
-                    <td>
-                      <div style={{ fontWeight: '500', color: '#1f2937' }}>
-                        {app.position_title}
-                      </div>
+                        <div style={{
+                          fontSize: '12px',
+                          color: workTypeColor,
+                          fontWeight: '500',
+                          marginTop: '4px'
+                        }}>
+                          {workTypeLabel}
+                        </div>
+                      </td>
+                      <td>
+                        <div style={{ fontWeight: '500', color: '#1f2937' }}>
+                          {app.position_title}
+                        </div>
                       {app.job_posting_text && (
                         <div style={{
                           fontSize: '12px',
@@ -218,18 +247,9 @@ const Applications = () => {
                     <td>
                       {getStatusBadge(app.status)}
                     </td>
-                    <td>
-                      <Link
-                        to={`/applications/${app.id}`}
-                        className="btn btn-secondary"
-                        style={{ fontSize: '12px', padding: '6px 12px' }}
-                      >
-                        <Eye size={14} />
-                        View
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -309,7 +329,6 @@ const Applications = () => {
         </div>
       )}
 
-      {console.log('ApplicationForm isOpen:', showApplicationForm)}
       <ApplicationForm
         isOpen={showApplicationForm}
         onClose={() => setShowApplicationForm(false)}

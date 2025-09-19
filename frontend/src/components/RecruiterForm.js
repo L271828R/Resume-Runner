@@ -103,6 +103,7 @@ const RecruiterForm = ({ recruiter, onClose }) => {
     {
       onSuccess: () => {
         queryClient.invalidateQueries('recruiters');
+        queryClient.invalidateQueries('recruiter-dashboard');
         onClose();
       },
     }
