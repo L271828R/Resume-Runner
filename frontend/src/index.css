@@ -25,10 +25,17 @@ code {
 
 .card {
   background: white;
-  border-radius: 8px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border-radius: 12px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   padding: 24px;
   margin-bottom: 24px;
+  border: 1px solid rgba(229, 231, 235, 0.8);
+  transition: all 0.2s ease-in-out;
+}
+
+.card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  transform: translateY(-2px);
 }
 
 .btn {
@@ -199,4 +206,22 @@ code {
   .grid-4 {
     grid-template-columns: 1fr;
   }
+}
+
+@keyframes resume-spinner-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.resume-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e5e7eb;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: resume-spinner-rotate 1s linear infinite;
 }

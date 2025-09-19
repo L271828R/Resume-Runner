@@ -1,6 +1,14 @@
-import React, { useState } from 'react';
-import { useMutation, useQueryClient } from 'react-query';
+import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient, useQuery } from 'react-query';
 import { X, Upload, FileText } from 'lucide-react';
+import TagSelector from './TagSelector';
+
+const normalizeBoolean = (value) => {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') return value.toLowerCase() === 'true';
+  return false;
+};
 
 const ResumeVersionForm = ({ version, onClose }) => {
   const [formData, setFormData] = useState({
@@ -8,12 +16,30 @@ const ResumeVersionForm = ({ version, onClose }) => {
     description: version?.description || '',
     target_roles: version?.target_roles || '',
     skills_emphasized: version?.skills_emphasized ? version.skills_emphasized.join(', ') : '',
-    is_master: version?.is_master || false
+    is_master: normalizeBoolean(version?.is_master)
   });
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedEditableFile, setSelectedEditableFile] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedTags, setSelectedTags] = useState([]);
 
   const queryClient = useQueryClient();
+
+  // Fetch existing tags for the resume version when editing
+  const { data: existingTagsData } = useQuery(
+    ['resume-tags', version?.id],
+    () => version?.id ? fetch(`/api/resume-versions/${version.id}/tags`).then(res => res.json()) : Promise.resolve({ tags: [] }),
+    {
+      enabled: !!version?.id
+    }
+  );
+
+  // Load existing tags when editing
+  useEffect(() => {
+    if (existingTagsData?.tags) {
+      setSelectedTags(existingTagsData.tags.map(tag => tag.id));
+    }
+  }, [existingTagsData]);
 
   const createMutation = useMutation(
     async (data) => {
@@ -35,10 +61,37 @@ const ResumeVersionForm = ({ version, onClose }) => {
       return response.json();
     },
     {
-      onSuccess: async () => {
-        console.log('🔍 [DEBUG] Resume version update successful, invalidating cache...');
+      onSuccess: async (result) => {
+        console.log('🔍 [DEBUG] Resume version update successful, updating tags...');
+
+        // Get the resume version ID (either from editing existing or newly created)
+        const resumeVersionId = version?.id || result.resume_version?.id;
+
+        if (resumeVersionId && selectedTags.length >= 0) {
+          // Update tags for the resume version
+          try {
+            const tagsResponse = await fetch(`/api/resume-versions/${resumeVersionId}/tags`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ tag_ids: selectedTags }),
+            });
+
+            if (!tagsResponse.ok) {
+              console.error('Failed to update tags, but resume was saved');
+            } else {
+              console.log('🔍 [DEBUG] Tags updated successfully');
+            }
+          } catch (error) {
+            console.error('Error updating tags:', error);
+          }
+        }
+
+        // Invalidate caches
         await queryClient.invalidateQueries('resume-versions');
         await queryClient.invalidateQueries('resume-metrics');
+        await queryClient.invalidateQueries('tags');
 
         // Force a refetch to ensure UI updates immediately
         console.log('🔍 [DEBUG] Forcing refetch of resume versions...');
@@ -50,24 +103,48 @@ const ResumeVersionForm = ({ version, onClose }) => {
     }
   );
 
+  useEffect(() => {
+    setFormData({
+      version_name: version?.version_name || '',
+      description: version?.description || '',
+      target_roles: version?.target_roles || '',
+      skills_emphasized: version?.skills_emphasized ? version.skills_emphasized.join(', ') : '',
+      is_master: normalizeBoolean(version?.is_master)
+    });
+  }, [version]);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    console.log('🔍 [DEBUG] Form submit started');
+    console.log('🔍 [DEBUG] Selected PDF file:', selectedFile);
+    console.log('🔍 [DEBUG] Selected editable file:', selectedEditableFile);
+    console.log('🔍 [DEBUG] Form data:', formData);
     setIsSubmitting(true);
 
     try {
       const submitData = {
         ...formData,
+        is_master: Boolean(formData.is_master),
         skills_emphasized: formData.skills_emphasized
           ? formData.skills_emphasized.split(',').map(skill => skill.trim())
           : []
       };
 
-      // If a file is selected, upload it first
-      if (selectedFile) {
-        console.log('🔍 [DEBUG] Uploading file:', selectedFile.name);
+      // If files are selected, upload them
+      if (selectedFile || selectedEditableFile) {
+        console.log('🔍 [DEBUG] Uploading files...');
+        if (selectedFile) console.log('  PDF file:', selectedFile.name);
+        if (selectedEditableFile) console.log('  Editable file:', selectedEditableFile.name);
 
         const formDataWithFile = new FormData();
-        formDataWithFile.append('file', selectedFile);
+        if (selectedFile) {
+          console.log('🔍 [DEBUG] Appending PDF file to FormData');
+          formDataWithFile.append('file', selectedFile);
+        }
+        if (selectedEditableFile) {
+          console.log('🔍 [DEBUG] Appending editable file to FormData');
+          formDataWithFile.append('editable_file', selectedEditableFile);
+        }
 
         // Add all form data to FormData
         Object.keys(submitData).forEach(key => {
@@ -94,10 +171,33 @@ const ResumeVersionForm = ({ version, onClose }) => {
         const result = await response.json();
         console.log('🔍 [DEBUG] Upload result:', result);
 
+        // Update tags for the resume version
+        const resumeVersionId = version?.id || result.resume_version?.id;
+        if (resumeVersionId && selectedTags.length >= 0) {
+          try {
+            const tagsResponse = await fetch(`/api/resume-versions/${resumeVersionId}/tags`, {
+              method: 'PUT',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ tag_ids: selectedTags }),
+            });
+
+            if (!tagsResponse.ok) {
+              console.error('Failed to update tags, but resume was saved');
+            } else {
+              console.log('🔍 [DEBUG] Tags updated successfully');
+            }
+          } catch (error) {
+            console.error('Error updating tags:', error);
+          }
+        }
+
         // Invalidate queries to refresh data
         console.log('🔍 [DEBUG] File upload successful, invalidating cache...');
         await queryClient.invalidateQueries('resume-versions');
         await queryClient.invalidateQueries('resume-metrics');
+        await queryClient.invalidateQueries('tags');
 
         // Force a refetch to ensure UI updates immediately
         console.log('🔍 [DEBUG] Forcing refetch of resume versions...');
@@ -119,6 +219,15 @@ const ResumeVersionForm = ({ version, onClose }) => {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     setSelectedFile(file);
+  };
+
+  const handleEditableFileChange = (e) => {
+    const file = e.target.files[0];
+    console.log('🔍 [DEBUG] Editable file selected:', file);
+    console.log('🔍 [DEBUG] File name:', file?.name);
+    console.log('🔍 [DEBUG] File type:', file?.type);
+    console.log('🔍 [DEBUG] File size:', file?.size);
+    setSelectedEditableFile(file);
   };
 
   const handleInputChange = (e) => {
@@ -322,6 +431,13 @@ const ResumeVersionForm = ({ version, onClose }) => {
             </p>
           </div>
 
+          <div style={{ marginBottom: '20px' }}>
+            <TagSelector
+              selectedTags={selectedTags}
+              onTagsChange={setSelectedTags}
+            />
+          </div>
+
           <div style={{ marginBottom: '24px' }}>
             <label style={{
               display: 'block',
@@ -330,7 +446,7 @@ const ResumeVersionForm = ({ version, onClose }) => {
               color: '#374151',
               marginBottom: '6px'
             }}>
-              Resume File (Optional)
+              PDF Resume (for viewing)
             </label>
             <div style={{
               border: '2px dashed #d1d5db',
@@ -343,29 +459,86 @@ const ResumeVersionForm = ({ version, onClose }) => {
               <input
                 type="file"
                 onChange={handleFileChange}
-                accept=".pdf,.doc,.docx"
+                accept=".pdf"
                 style={{ display: 'none' }}
-                id="file-upload"
+                id="pdf-upload"
               />
-              <label htmlFor="file-upload" style={{ cursor: 'pointer' }}>
+              <label htmlFor="pdf-upload" style={{ cursor: 'pointer' }}>
                 {selectedFile ? (
                   <div>
-                    <FileText size={24} style={{ color: '#10b981', marginBottom: '8px' }} />
+                    <FileText size={24} style={{ color: '#dc2626', marginBottom: '8px' }} />
                     <p style={{ margin: '0 0 4px 0', fontWeight: '500', color: '#1f2937' }}>
                       {selectedFile.name}
                     </p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
-                      Click to change file
+                      Click to change PDF file
                     </p>
                   </div>
                 ) : (
                   <div>
                     <Upload size={24} style={{ color: '#6b7280', marginBottom: '8px' }} />
                     <p style={{ margin: '0 0 4px 0', color: '#374151' }}>
-                      Click to upload resume (optional)
+                      Upload PDF resume for viewing
                     </p>
                     <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
-                      PDF, DOC, or DOCX files only
+                      PDF files only
+                    </p>
+                  </div>
+                )}
+              </label>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: '24px' }}>
+            <label style={{
+              display: 'block',
+              fontSize: '14px',
+              fontWeight: '500',
+              color: '#374151',
+              marginBottom: '6px'
+            }}>
+              Editable Source (for editing)
+            </label>
+            <div style={{
+              border: '2px dashed #d1d5db',
+              borderRadius: '4px',
+              padding: '20px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              backgroundColor: selectedEditableFile ? '#f9fafb' : 'white'
+            }}>
+              <input
+                type="file"
+                onChange={handleEditableFileChange}
+                style={{ display: 'none' }}
+                id="editable-upload"
+              />
+              <label
+                htmlFor="editable-upload"
+                style={{ cursor: 'pointer' }}
+                onClick={() => {
+                  console.log('🔍 [DEBUG] Editable file label clicked');
+                  document.getElementById('editable-upload').click();
+                }}
+              >
+                {selectedEditableFile ? (
+                  <div>
+                    <FileText size={24} style={{ color: '#2563eb', marginBottom: '8px' }} />
+                    <p style={{ margin: '0 0 4px 0', fontWeight: '500', color: '#1f2937' }}>
+                      {selectedEditableFile.name}
+                    </p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
+                      Click to change editable file
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <Upload size={24} style={{ color: '#6b7280', marginBottom: '8px' }} />
+                    <p style={{ margin: '0 0 4px 0', color: '#374151' }}>
+                      Upload editable source for editing
+                    </p>
+                    <p style={{ margin: 0, fontSize: '12px', color: '#6b7280' }}>
+                      DOC, DOCX, or Pages files
                     </p>
                   </div>
                 )}

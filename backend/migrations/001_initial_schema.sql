@@ -2,6 +2,8 @@
 -- Resume Runner Database Initial Setup
 -- Created: 2024-09-18
 
+-- UP
+
 -- Companies table - track companies and their hiring patterns
 CREATE TABLE companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -202,3 +204,6 @@ LEFT JOIN recruiters r ON a.recruiter_id = r.id
 LEFT JOIN job_postings jp ON a.job_posting_id = jp.id
 WHERE a.status NOT IN ('rejected', 'withdrawn', 'offer')
 ORDER BY a.application_date DESC;
+
+-- DOWN
+-- Initial schema rollback not supported. Drop and recreate the database if needed.

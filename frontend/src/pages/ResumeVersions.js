@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useQuery } from 'react-query';
-import { Plus, FileText, TrendingUp, Eye } from 'lucide-react';
+import { Plus, FileText, TrendingUp, Eye, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import ResumeVersionForm from '../components/ResumeVersionForm';
 import ResumeViewer from '../components/ResumeViewer';
@@ -12,7 +12,7 @@ const ResumeVersions = () => {
 
   const { data: versions, isLoading: versionsLoading } = useQuery(
     'resume-versions',
-    () => fetch('/api/resume-versions').then(res => res.json())
+    () => fetch('/api/resume-versions/with-tags').then(res => res.json())
   );
 
   const { data: metrics, isLoading: metricsLoading } = useQuery(
@@ -52,6 +52,103 @@ const ResumeVersions = () => {
   const handleEditResume = (version) => {
     setEditingVersion(version);
     setShowForm(true);
+  };
+
+  const handleViewPDFInNewTab = async (version) => {
+    try {
+      console.log('🔍 [DEBUG] Opening PDF in new tab for version:', version.version_name);
+
+      const response = await fetch('/api/files/download-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          s3_key: version.s3_key,
+          expires_in: 3600
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate download URL');
+      }
+
+      const data = await response.json();
+
+      // Open PDF in new tab
+      window.open(data.download_url, '_blank');
+    } catch (error) {
+      console.error('Error opening PDF file:', error);
+      alert('Failed to open PDF file. Please try again.');
+    }
+  };
+
+  const handleDownloadPDF = async (version) => {
+    try {
+      console.log('🔍 [DEBUG] Downloading PDF file for version:', version.version_name);
+
+      const response = await fetch('/api/files/download-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          s3_key: version.s3_key,
+          expires_in: 3600
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate download URL');
+      }
+
+      const data = await response.json();
+
+      // Create a temporary link and click it to download
+      const link = document.createElement('a');
+      link.href = data.download_url;
+      link.download = version.filename || `${version.version_name}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading PDF file:', error);
+      alert('Failed to download PDF file. Please try again.');
+    }
+  };
+
+  const handleDownloadEditable = async (version) => {
+    try {
+      console.log('🔍 [DEBUG] Downloading editable file for version:', version.version_name);
+
+      const response = await fetch('/api/files/download-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          s3_key: version.editable_s3_key,
+          expires_in: 3600
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to generate download URL');
+      }
+
+      const data = await response.json();
+
+      // Create a temporary link and click it to download
+      const link = document.createElement('a');
+      link.href = data.download_url;
+      link.download = version.editable_filename || `${version.version_name}_editable.pages`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (error) {
+      console.error('Error downloading editable file:', error);
+      alert('Failed to download editable file. Please try again.');
+    }
   };
 
   return (
@@ -123,9 +220,98 @@ const ResumeVersions = () => {
                       <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>
                         Target Roles: {version.target_roles || 'Not specified'}
                       </div>
-                      <div style={{ fontSize: '14px', color: '#6b7280' }}>
+                      <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>
                         Created: {format(new Date(version.created_at), 'MMM d, yyyy')}
                       </div>
+
+                      {/* File Downloads */}
+                      {(version.s3_key || version.editable_s3_key) ? (
+                        <div style={{
+                          marginTop: '8px',
+                          padding: '12px',
+                          backgroundColor: '#f8fafc',
+                          borderRadius: '6px',
+                          border: '1px solid #e2e8f0'
+                        }}>
+                          <div style={{
+                            fontSize: '12px',
+                            fontWeight: '600',
+                            color: '#64748b',
+                            marginBottom: '8px',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em'
+                          }}>
+                            Download Files
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                            {version.s3_key && (
+                              <button
+                                onClick={() => handleViewPDFInNewTab(version)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 12px',
+                                  backgroundColor: '#dc2626',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s'
+                                }}
+                                onMouseOver={(e) => e.target.style.backgroundColor = '#b91c1c'}
+                                onMouseOut={(e) => e.target.style.backgroundColor = '#dc2626'}
+                              >
+                                <Eye size={12} />
+                                PDF
+                              </button>
+                            )}
+                            {version.editable_s3_key && (
+                              <button
+                                onClick={() => handleDownloadEditable(version)}
+                                style={{
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  padding: '6px 12px',
+                                  backgroundColor: '#2563eb',
+                                  color: 'white',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  fontSize: '12px',
+                                  fontWeight: '500',
+                                  cursor: 'pointer',
+                                  transition: 'all 0.2s'
+                                }}
+                                onMouseOver={(e) => e.target.style.backgroundColor = '#1d4ed8'}
+                                onMouseOut={(e) => e.target.style.backgroundColor = '#2563eb'}
+                              >
+                                <Download size={12} />
+                                {version.editable_filename?.endsWith('.pages') ? 'Pages' :
+                                 version.editable_filename?.endsWith('.docx') ? 'Word' : 'Editable'}
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>
+                            {version.s3_key && `PDF: ${version.filename}`}
+                            {version.s3_key && version.editable_s3_key && ' • '}
+                            {version.editable_s3_key && `Source: ${version.editable_filename}`}
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{
+                          marginTop: '8px',
+                          padding: '12px',
+                          backgroundColor: '#fafafa',
+                          borderRadius: '6px',
+                          border: '1px solid #e5e7eb',
+                          textAlign: 'center'
+                        }}>
+                          <span style={{ fontSize: '12px', color: '#9ca3af' }}>No files uploaded</span>
+                        </div>
+                      )}
                     </div>
 
                     {version.description && (
@@ -167,6 +353,36 @@ const ResumeVersions = () => {
                         </div>
                       </div>
                     )}
+
+                    {version.tags && (
+                      <div style={{ marginBottom: '16px' }}>
+                        <div style={{
+                          fontSize: '14px',
+                          color: '#6b7280',
+                          marginBottom: '8px'
+                        }}>
+                          Tags:
+                        </div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {version.tags.split(', ').map((tag, index) => (
+                            <span
+                              key={index}
+                              style={{
+                                background: '#f3f4f6',
+                                color: '#374151',
+                                padding: '4px 8px',
+                                borderRadius: '4px',
+                                fontSize: '12px',
+                                fontWeight: '500',
+                                border: '1px solid #d1d5db'
+                              }}
+                            >
+                              🏷️ {tag}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div style={{
@@ -175,14 +391,16 @@ const ResumeVersions = () => {
                     alignItems: 'flex-end',
                     gap: '8px'
                   }}>
-                    <button
-                      className="btn btn-secondary"
-                      style={{ fontSize: '12px' }}
-                      onClick={() => handleViewResume(version)}
-                    >
-                      <Eye size={14} />
-                      View
-                    </button>
+                    {version.s3_key && (
+                      <button
+                        className="btn btn-secondary"
+                        style={{ fontSize: '12px' }}
+                        onClick={() => handleViewResume(version)}
+                      >
+                        <Eye size={14} />
+                        View PDF
+                      </button>
+                    )}
                     <button
                       className="btn btn-secondary"
                       style={{ fontSize: '12px' }}

@@ -197,6 +197,7 @@ class TestRecruiterOperations:
 
         assert recruiter is not None
         assert recruiter['name'] == sample_recruiter_data['name']
+        assert recruiter['primary_contact_name'] == sample_recruiter_data['primary_contact_name']
         assert recruiter['email'] == sample_recruiter_data['email']
         assert recruiter['company'] == sample_recruiter_data['company']
         assert recruiter['relationship_status'] == sample_recruiter_data['relationship_status']

@@ -179,6 +179,15 @@ const RecruiterDetail = () => {
             color: '#6b7280',
             fontSize: '16px'
           }}>
+            {recruiter.primary_contact_name && (
+              <>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <User size={16} />
+                  {recruiter.primary_contact_name}
+                </span>
+                <span>•</span>
+              </>
+            )}
             {recruiter.company && (
               <>
                 <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -230,6 +239,18 @@ const RecruiterDetail = () => {
           {/* Contact Information */}
           <InfoCard title="Contact Information" icon={User}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {recruiter.primary_contact_name && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <User size={16} style={{ color: '#6b7280' }} />
+                  <div>
+                    <div style={{ fontSize: '16px', fontWeight: '600', color: '#1f2937' }}>
+                      {recruiter.primary_contact_name}
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>Primary Contact</div>
+                  </div>
+                </div>
+              )}
+
               {recruiter.email && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <Mail size={16} style={{ color: '#6b7280' }} />
@@ -237,7 +258,7 @@ const RecruiterDetail = () => {
                     <a href={`mailto:${recruiter.email}`} style={{ color: '#3b82f6', textDecoration: 'none' }}>
                       {recruiter.email}
                     </a>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>Primary Email</div>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>Primary Contact Email</div>
                   </div>
                 </div>
               )}
@@ -249,7 +270,7 @@ const RecruiterDetail = () => {
                     <a href={`tel:${recruiter.phone}`} style={{ color: '#3b82f6', textDecoration: 'none' }}>
                       {recruiter.phone}
                     </a>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>Primary Phone</div>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>Primary Contact Phone</div>
                   </div>
                 </div>
               )}
@@ -261,7 +282,7 @@ const RecruiterDetail = () => {
                     <a href={`tel:${recruiter.phone_secondary}`} style={{ color: '#3b82f6', textDecoration: 'none' }}>
                       {recruiter.phone_secondary}
                     </a>
-                    <div style={{ fontSize: '12px', color: '#6b7280' }}>Secondary Phone</div>
+                    <div style={{ fontSize: '12px', color: '#6b7280' }}>Secondary Contact Phone</div>
                   </div>
                 </div>
               )}

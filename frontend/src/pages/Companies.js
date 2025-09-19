@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useQuery } from 'react-query';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import { Link } from 'react-router-dom';
 import {
   Plus,
@@ -16,17 +16,80 @@ import {
   Eye,
   CheckCircle,
   XCircle,
-  Clock
+  Clock,
+  Edit
 } from 'lucide-react';
 import { format } from 'date-fns';
+import CompanyForm from '../components/CompanyForm';
 
 const Companies = () => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [showCompanyForm, setShowCompanyForm] = useState(false);
+  const [companyToEdit, setCompanyToEdit] = useState(null);
+
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery(
     'companies',
     () => fetch('/api/companies').then(res => res.json())
   );
+
+  const createCompanyMutation = useMutation(
+    async (payload) => {
+      const response = await fetch('/api/companies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to create company');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('companies');
+        setShowCompanyForm(false);
+        setCompanyToEdit(null);
+      }
+    }
+  );
+
+  const updateCompanyMutation = useMutation(
+    async ({ id, ...payload }) => {
+      const response = await fetch(`/api/companies/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to update company');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: () => {
+        queryClient.invalidateQueries('companies');
+        setShowCompanyForm(false);
+        setCompanyToEdit(null);
+      }
+    }
+  );
+
+  const handleEditCompany = (company) => {
+    setCompanyToEdit(company);
+    setShowCompanyForm(true);
+  };
 
   if (isLoading) return <div>Loading companies...</div>;
   if (error) return <div>Error loading companies</div>;
@@ -71,7 +134,13 @@ const Companies = () => {
             Track company hiring patterns and build your target list
           </p>
         </div>
-        <button className="btn btn-primary">
+        <button
+          className="btn btn-primary"
+          onClick={() => {
+            setCompanyToEdit(null);
+            setShowCompanyForm(true);
+          }}
+        >
           <Plus size={16} />
           Add Company
         </button>
@@ -376,6 +445,14 @@ const Companies = () => {
                   <Eye size={12} style={{ marginRight: '4px' }} />
                   View Details
                 </Link>
+                <button
+                  onClick={() => handleEditCompany(company)}
+                  className="btn btn-secondary"
+                  style={{ flex: 1, fontSize: '12px' }}
+                >
+                  <Edit size={12} style={{ marginRight: '4px' }} />
+                  Edit
+                </button>
                 <button className="btn btn-primary" style={{ flex: 1, fontSize: '12px' }}>
                   <Target size={12} style={{ marginRight: '4px' }} />
                   Apply Now
@@ -458,6 +535,19 @@ const Companies = () => {
           </div>
         </div>
       )}
+      <CompanyForm
+        isOpen={showCompanyForm}
+        company={companyToEdit}
+        onClose={() => {
+          setShowCompanyForm(false);
+          setCompanyToEdit(null);
+        }}
+        onSubmit={(formValues) =>
+          companyToEdit
+            ? updateCompanyMutation.mutateAsync({ id: companyToEdit.id, ...formValues })
+            : createCompanyMutation.mutateAsync(formValues)
+        }
+      />
     </div>
   );
 };

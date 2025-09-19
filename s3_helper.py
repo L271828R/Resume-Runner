@@ -7,7 +7,11 @@ Currently stubbed with test data - will use real S3 when bucket is configured
 
 import os
 import boto3
-from botocore.exceptions import ClientError, NoCredentialsError
+from botocore.exceptions import (
+    ClientError,
+    EndpointConnectionError,
+    NoCredentialsError,
+)
 from pathlib import Path
 from typing import Optional, Dict, Any
 from dotenv import load_dotenv
@@ -32,25 +36,39 @@ class S3Helper:
                     aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY')
                 )
                 self._verify_bucket_access()
-            except (NoCredentialsError, ClientError) as e:
-                print(f"⚠️  S3 credentials not configured properly: {e}")
-                print("   Using stubbed mode for development")
+            except (NoCredentialsError, ClientError, EndpointConnectionError) as e:
+                print(f"⚠️  S3 configuration issue detected: {e}")
+                print("   Falling back to stubbed S3 mode for development")
+                self.is_stubbed = True
+            except Exception as e:
+                print(f"❌ Unexpected error while configuring S3: {e}")
+                print("   Falling back to stubbed S3 mode for development")
                 self.is_stubbed = True
         else:
             print("📝 S3Helper running in stubbed mode - update .env with real bucket name")
+
+        # Surface final operating mode for clarity in logs
+        if self.is_stubbed:
+            print("ℹ️  S3Helper active in STUB mode – uploads will be simulated locally")
+        else:
+            print(f"ℹ️  S3Helper connected to bucket '{self.bucket_name}' in region '{self.aws_region}'")
 
     def _verify_bucket_access(self):
         """Verify we can access the S3 bucket"""
         try:
             self.s3_client.head_bucket(Bucket=self.bucket_name)
             print(f"✅ S3 bucket '{self.bucket_name}' is accessible")
-        except ClientError as e:
-            error_code = e.response['Error']['Code']
-            if error_code == '404':
-                print(f"❌ S3 bucket '{self.bucket_name}' does not exist")
+        except (ClientError, EndpointConnectionError) as e:
+            if isinstance(e, ClientError):
+                error_code = e.response['Error']['Code']
+                if error_code == '404':
+                    print(f"❌ S3 bucket '{self.bucket_name}' does not exist")
+                else:
+                    print(f"❌ Error accessing S3 bucket: {e}")
             else:
-                print(f"❌ Error accessing S3 bucket: {e}")
+                print(f"❌ Unable to reach S3 endpoint: {e}")
             self.is_stubbed = True
+            print("ℹ️  S3Helper switching to stub mode due to connection issue")
 
     def upload_resume(self, file_path: str, version_name: str) -> str:
         """
@@ -58,6 +76,7 @@ class S3Helper:
         Returns the S3 key for the uploaded file
         """
         if self.is_stubbed:
+            print("ℹ️  Uploading resume via STUB flow")
             return self._stub_upload_resume(file_path, version_name)
 
         try:
@@ -91,6 +110,8 @@ class S3Helper:
 
         except Exception as e:
             print(f"❌ Error uploading resume: {e}")
+            print("ℹ️  Falling back to stub upload so request can complete")
+            self.is_stubbed = True
             return self._stub_upload_resume(file_path, version_name)
 
     def upload_job_screenshot(self, file_path: str, company_name: str, job_title: str) -> str:
@@ -99,6 +120,7 @@ class S3Helper:
         Returns the S3 key for the uploaded file
         """
         if self.is_stubbed:
+            print("ℹ️  Uploading job screenshot via STUB flow")
             return self._stub_upload_screenshot(file_path, company_name, job_title)
 
         try:
@@ -130,6 +152,8 @@ class S3Helper:
 
         except Exception as e:
             print(f"❌ Error uploading screenshot: {e}")
+            print("ℹ️  Falling back to stub upload so request can complete")
+            self.is_stubbed = True
             return self._stub_upload_screenshot(file_path, company_name, job_title)
 
     def upload_cover_letter(self, file_path: str, company_name: str, position_title: str) -> str:
@@ -138,6 +162,7 @@ class S3Helper:
         Returns the S3 key for the uploaded file
         """
         if self.is_stubbed:
+            print("ℹ️  Uploading cover letter via STUB flow")
             return self._stub_upload_cover_letter(file_path, company_name, position_title)
 
         try:
@@ -168,6 +193,8 @@ class S3Helper:
 
         except Exception as e:
             print(f"❌ Error uploading cover letter: {e}")
+            print("ℹ️  Falling back to stub upload so request can complete")
+            self.is_stubbed = True
             return self._stub_upload_cover_letter(file_path, company_name, position_title)
 
     def get_download_url(self, s3_key: str, expires_in: int = 3600) -> str:

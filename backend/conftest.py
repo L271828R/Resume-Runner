@@ -88,7 +88,8 @@ def sample_resume_data():
 def sample_recruiter_data():
     """Sample recruiter data for testing"""
     return {
-        'name': 'Jane Smith',
+        'name': 'Tech Recruitment Solutions',
+        'primary_contact_name': 'Jane Smith',
         'email': 'jane.smith@techrecruiter.com',
         'phone': '(555) 123-4567',
         'company': 'Tech Recruitment Solutions',

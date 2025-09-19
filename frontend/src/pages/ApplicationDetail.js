@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { useQuery } from 'react-query';
+import React, { useState, useEffect } from 'react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
   ArrowLeft,
   Building2,
@@ -10,7 +10,10 @@ import {
   MapPin,
   User,
   Mail,
-  ExternalLink
+  ExternalLink,
+  RotateCw,
+  Trash2,
+  XCircle
 } from 'lucide-react';
 import { format } from 'date-fns';
 import ApplicationTimeline from '../components/ApplicationTimeline';
@@ -18,16 +21,73 @@ import ApplicationTimeline from '../components/ApplicationTimeline';
 const ApplicationDetail = () => {
   const { id } = useParams();
   const [showResumeModal, setShowResumeModal] = useState(false);
+  const [showChangeResumeModal, setShowChangeResumeModal] = useState(false);
+  const [selectedResumeId, setSelectedResumeId] = useState('');
+
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const { data, isLoading, error } = useQuery(
     ['application', id],
     () => fetch(`/api/applications/${id}`).then(res => res.json())
   );
 
-  if (isLoading) return <div>Loading application details...</div>;
-  if (error) return <div>Error loading application</div>;
+  const { data: resumeData } = useQuery(
+    'resume-versions-select',
+    () => fetch('/api/resume-versions').then(res => res.json())
+  );
+
+  const updateResumeMutation = useMutation(
+    async (payload) => {
+      const response = await fetch(`/api/applications/${id}/resume`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'Failed to update resume');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries(['application', id]);
+        await queryClient.invalidateQueries('applications');
+        setShowChangeResumeModal(false);
+      }
+    }
+  );
+
+  const deleteApplicationMutation = useMutation(
+    async () => {
+      const response = await fetch(`/api/applications/${id}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'Failed to delete application');
+      }
+      return response.json();
+    },
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries('applications');
+        navigate('/applications');
+      }
+    }
+  );
 
   const app = data?.application;
+
+  useEffect(() => {
+    if (showChangeResumeModal && app?.resume_version_id) {
+      setSelectedResumeId(String(app.resume_version_id));
+    }
+  }, [showChangeResumeModal, app?.resume_version_id]);
+
+  if (isLoading) return <div>Loading application details...</div>;
+  if (error) return <div>Error loading application</div>;
   if (!app) return <div>Application not found</div>;
 
   const getStatusBadge = (status) => {
@@ -113,9 +173,25 @@ const ApplicationDetail = () => {
             {getStatusBadge(app.status)}
           </div>
         </div>
-        <button className="btn btn-primary">
-          Update Status
-        </button>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button
+            className="btn btn-danger"
+            style={{ background: '#ef4444', color: 'white' }}
+            onClick={() => {
+              const confirmed = window.confirm('Delete this application? This action cannot be undone.');
+              if (confirmed) {
+                deleteApplicationMutation.mutate();
+              }
+            }}
+            disabled={deleteApplicationMutation.isLoading}
+          >
+            <Trash2 size={16} />
+            {deleteApplicationMutation.isLoading ? 'Deleting...' : 'Delete'}
+          </button>
+          <button className="btn btn-primary">
+            Update Status
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-2" style={{ gap: '24px' }}>
@@ -154,7 +230,7 @@ const ApplicationDetail = () => {
                   value={`$${app.salary_min.toLocaleString()} - $${app.salary_max.toLocaleString()}`}
                 />
               )}
-              {app.is_remote !== null && (
+              {app.is_remote !== null && app.is_remote !== undefined && (
                 <InfoRow
                   icon={MapPin}
                   label="Work Type"
@@ -181,13 +257,23 @@ const ApplicationDetail = () => {
                 <div style={{ fontWeight: '600', color: '#1f2937' }}>
                   {app.resume_version}
                 </div>
-                <button
-                  className="btn btn-secondary"
-                  style={{ fontSize: '12px', padding: '4px 8px' }}
-                  onClick={() => setShowResumeModal(true)}
-                >
-                  View Resume
-                </button>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: '12px', padding: '4px 8px' }}
+                    onClick={() => setShowResumeModal(true)}
+                  >
+                    View Resume
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    style={{ fontSize: '12px', padding: '4px 8px' }}
+                    onClick={() => setShowChangeResumeModal(true)}
+                  >
+                    <RotateCw size={14} />
+                    Change
+                  </button>
+                </div>
               </div>
               {app.resume_skills && (
                 <div>
@@ -243,9 +329,9 @@ const ApplicationDetail = () => {
           {/* Application Timeline */}
           <ApplicationTimeline applicationId={id} />
 
-          {/* Job Description */}
-          {app.job_description && (
-            <InfoCard title="Job Description">
+          {/* Job Description Snapshot */}
+          {app.job_posting_text && (
+            <InfoCard title="Job Posting Snapshot">
               <div style={{
                 maxHeight: '300px',
                 overflowY: 'auto',
@@ -254,7 +340,7 @@ const ApplicationDetail = () => {
                 color: '#374151',
                 whiteSpace: 'pre-wrap'
               }}>
-                {app.job_description}
+                {app.job_posting_text}
               </div>
             </InfoCard>
           )}
@@ -272,24 +358,6 @@ const ApplicationDetail = () => {
               </div>
             </InfoCard>
           )}
-
-          {/* Quick Actions */}
-          <InfoCard title="Quick Actions">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <button className="btn btn-secondary">
-                <FileText size={16} />
-                View Cover Letter
-              </button>
-              <button className="btn btn-secondary">
-                <ExternalLink size={16} />
-                View Job Posting
-              </button>
-              <button className="btn btn-secondary">
-                <Calendar size={16} />
-                Schedule Follow-up
-              </button>
-            </div>
-          </InfoCard>
         </div>
       </div>
 
@@ -350,6 +418,100 @@ const ApplicationDetail = () => {
               fontFamily: 'monospace'
             }}>
               {app.resume_content || 'Resume content not available'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Resume Modal */}
+      {showChangeResumeModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1100,
+          padding: '20px'
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '8px',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '400px'
+          }}>
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: '16px'
+            }}>
+              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
+                Change Resume Version
+              </h3>
+              <button
+                onClick={() => setShowChangeResumeModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#6b7280' }}
+              >
+                <XCircle size={20} />
+              </button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Select Resume Version</label>
+              <select
+                className="form-input"
+                value={selectedResumeId}
+                onChange={(e) => setSelectedResumeId(e.target.value)}
+              >
+                <option value="">Select a resume version</option>
+                {resumeData?.resume_versions?.map((version) => (
+                  <option key={version.id} value={version.id}>
+                    {version.version_name}{version.is_master ? ' (Master)' : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {updateResumeMutation.isError && (
+              <div style={{
+                background: '#fee2e2',
+                color: '#b91c1c',
+                borderRadius: '6px',
+                padding: '10px 12px',
+                marginBottom: '12px',
+                border: '1px solid #fecaca',
+                fontSize: '13px'
+              }}>
+                {updateResumeMutation.error?.message || 'Failed to update resume'}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => setShowChangeResumeModal(false)}
+                style={{ padding: '8px 12px' }}
+                disabled={updateResumeMutation.isLoading}
+              >
+                Cancel
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={() => {
+                  if (!selectedResumeId) return;
+                  updateResumeMutation.mutate({ resume_version_id: selectedResumeId });
+                }}
+                disabled={updateResumeMutation.isLoading || !selectedResumeId}
+                style={{ padding: '8px 12px' }}
+              >
+                {updateResumeMutation.isLoading ? 'Saving...' : 'Save'}
+              </button>
             </div>
           </div>
         </div>
