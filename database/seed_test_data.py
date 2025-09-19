@@ -60,9 +60,15 @@ def seed_test_data():
 
     company_ids = []
     for company in companies_data:
-        company_id = db.add_company(**company)
-        company_ids.append(company_id)
-        print(f"  ✓ Added company: {company['name']}")
+        # Check if company already exists
+        existing_company = db.find_company_by_name(company['name'])
+        if existing_company:
+            company_ids.append(existing_company['id'])
+            print(f"  ⚠️  Company already exists: {company['name']}")
+        else:
+            company_id = db.add_company(**company)
+            company_ids.append(company_id)
+            print(f"  ✓ Added company: {company['name']}")
 
     # Sample resume versions
     resume_versions_data = [
