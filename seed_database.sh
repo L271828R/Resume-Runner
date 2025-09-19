@@ -156,7 +156,7 @@ run_migrations() {
     # Run migrations non-interactively for production
     if python3 migrate.py status > /dev/null 2>&1; then
         # Check if there are pending migrations
-        if python3 migrate.py status | grep -q "Pending migrations: 0"; then
+        if python3 migrate.py status | grep -q "✅ No pending migrations"; then
             print_colored $GREEN "✅ Database is already up to date"
         else
             print_colored $YELLOW "⚡ Applying pending migrations..."
