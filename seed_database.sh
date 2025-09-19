@@ -22,6 +22,7 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BACKEND_DIR="$SCRIPT_DIR/backend"
 DATABASE_DIR="$SCRIPT_DIR/database"
+SCHEMA_DIR="$SCRIPT_DIR/schema"
 MIGRATIONS_DIR="$BACKEND_DIR/migrations"
 
 # Default values
@@ -101,16 +102,16 @@ validate_environment() {
     fi
 
     # Check if required directories exist
-    for dir in "$BACKEND_DIR" "$DATABASE_DIR" "$MIGRATIONS_DIR"; do
+    for dir in "$BACKEND_DIR" "$DATABASE_DIR" "$SCHEMA_DIR"; do
         if [[ ! -d "$dir" ]]; then
             print_colored $RED "❌ Error: Required directory not found: $dir"
             exit 1
         fi
     done
 
-    # Check if migration script exists
-    if [[ ! -f "$MIGRATIONS_DIR/migrate.py" ]]; then
-        print_colored $RED "❌ Error: Migration script not found: $MIGRATIONS_DIR/migrate.py"
+    # Check if schema files exist
+    if [[ ! -f "$SCHEMA_DIR/init_db.sql" ]]; then
+        print_colored $RED "❌ Error: Main schema file not found: $SCHEMA_DIR/init_db.sql"
         exit 1
     fi
 
@@ -147,41 +148,81 @@ install_dependencies() {
     cd "$SCRIPT_DIR"
 }
 
-# Function to run database migrations
-run_migrations() {
-    print_colored $BLUE "🚀 Running database migrations..."
+# Function to initialize database from schema
+initialize_database() {
+    local db_path="$DATABASE_DIR/resume_runner.db"
 
-    cd "$MIGRATIONS_DIR"
+    print_colored $BLUE "🚀 Initializing database from schema..."
 
-    # Run migrations non-interactively for production
-    if python3 migrate.py status > /dev/null 2>&1; then
-        # Check if there are pending migrations
-        if python3 migrate.py status | grep -q "✅ No pending migrations"; then
-            print_colored $GREEN "✅ Database is already up to date"
+    # Check if database already exists
+    if [[ -f "$db_path" ]]; then
+        print_colored $GREEN "✅ Database already exists at: $db_path"
+
+        # Check if it has tables
+        local table_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';" 2>/dev/null || echo "0")
+
+        if [[ "$table_count" -gt 0 ]]; then
+            print_colored $GREEN "✅ Database contains $table_count tables - appears ready to use"
+            return 0
         else
-            print_colored $YELLOW "⚡ Applying pending migrations..."
-            # For production, we auto-apply migrations without user confirmation
-            # This modifies the migrate.py behavior temporarily
-            echo "y" | python3 migrate.py up
-            print_colored $GREEN "✅ Migrations applied successfully"
+            print_colored $YELLOW "⚠️  Database file exists but appears empty - recreating schema..."
         fi
     else
-        print_colored $RED "❌ Failed to run migrations"
-        print_colored $YELLOW "   Check the migration script and database permissions"
+        print_colored $BLUE "📄 Creating new database from schema files..."
+    fi
+
+    # Create/recreate database from schema files
+    if sqlite3 "$db_path" < "$SCHEMA_DIR/init_db.sql"; then
+        print_colored $GREEN "✅ Main schema applied successfully"
+    else
+        print_colored $RED "❌ Failed to apply main schema"
         exit 1
     fi
 
-    cd "$SCRIPT_DIR"
+    # Apply additional schema files if they exist
+    if [[ -f "$SCHEMA_DIR/add_tagging.sql" ]]; then
+        if sqlite3 "$db_path" < "$SCHEMA_DIR/add_tagging.sql"; then
+            print_colored $GREEN "✅ Tagging schema applied successfully"
+        else
+            print_colored $RED "❌ Failed to apply tagging schema"
+            exit 1
+        fi
+    fi
+
+    # Set schema version
+    sqlite3 "$db_path" "CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY);"
+    sqlite3 "$db_path" "INSERT OR REPLACE INTO schema_migrations (version) VALUES (1);"
+
+    print_colored $GREEN "✅ Database initialized successfully"
 }
 
-# Function to show migration status
-show_migration_status() {
-    print_colored $BLUE "📊 Database Migration Status"
-    print_colored $BLUE "================================"
+# Function to show database status
+show_database_status() {
+    local db_path="$DATABASE_DIR/resume_runner.db"
 
-    cd "$MIGRATIONS_DIR"
-    python3 migrate.py status
-    cd "$SCRIPT_DIR"
+    print_colored $BLUE "📊 Database Status"
+    print_colored $BLUE "=================="
+
+    if [[ ! -f "$db_path" ]]; then
+        print_colored $YELLOW "⚠️  Database file does not exist: $db_path"
+        print_colored $BLUE "   Run without --status to create the database"
+        return 1
+    fi
+
+    # Show schema version
+    local schema_version=$(sqlite3 "$db_path" "SELECT version FROM schema_migrations ORDER BY version DESC LIMIT 1;" 2>/dev/null || echo "unknown")
+    print_colored $GREEN "Schema version: $schema_version"
+
+    # Show table count
+    local table_count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';" 2>/dev/null || echo "0")
+    print_colored $GREEN "Tables: $table_count"
+
+    # Show sample table info
+    print_colored $BLUE "Available tables:"
+    sqlite3 "$db_path" "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name;" | while read table; do
+        local count=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM $table;" 2>/dev/null || echo "error")
+        print_colored $BLUE "  • $table ($count rows)"
+    done
 }
 
 # Function to seed test data
@@ -229,7 +270,7 @@ main() {
     # Show status and exit if requested
     if [[ "$SHOW_STATUS" == "true" ]]; then
         validate_environment
-        show_migration_status
+        show_database_status
         exit 0
     fi
 
@@ -242,8 +283,8 @@ main() {
     # Backup existing database (if it exists)
     backup_database
 
-    # Run migrations
-    run_migrations
+    # Initialize database from schema
+    initialize_database
 
     # Seed test data if requested
     if [[ "$WITH_TEST_DATA" == "true" ]]; then
@@ -258,7 +299,7 @@ main() {
     # Show final status
     print_colored $BLUE ""
     print_colored $BLUE "📋 Final Status:"
-    show_migration_status
+    show_database_status
 
     print_colored $BLUE ""
     print_colored $BLUE "💡 Next steps:"

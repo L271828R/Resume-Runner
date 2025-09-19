@@ -26,8 +26,10 @@ if [ -d "$PROJECT_DIR/backend/venv" ]; then
 else
   tmux send-keys -t $SESSION_NAME:1 "python3 -m venv venv && source venv/bin/activate" C-m
   tmux send-keys -t $SESSION_NAME:1 "pip install --upgrade pip" C-m
-  tmux send-keys -t $SESSION_NAME:1 "pip install flask flask-cors python-dotenv boto3" C-m
 fi
+
+# Install dependencies from requirements.txt
+tmux send-keys -t $SESSION_NAME:1 "pip install -r requirements.txt" C-m
 
 # Start backend server
 tmux send-keys -t $SESSION_NAME:1 "python server.py" C-m
@@ -36,10 +38,8 @@ tmux send-keys -t $SESSION_NAME:1 "python server.py" C-m
 tmux new-window -t $SESSION_NAME:2 -n 'frontend'
 tmux send-keys -t $SESSION_NAME:2 "cd $PROJECT_DIR/frontend" C-m
 
-# Install npm dependencies if node_modules doesn't exist
-if [ ! -d "$PROJECT_DIR/frontend/node_modules" ]; then
-  tmux send-keys -t $SESSION_NAME:2 "npm install" C-m
-fi
+# Always install/update npm dependencies
+tmux send-keys -t $SESSION_NAME:2 "npm install" C-m
 
 # Start frontend development server
 tmux send-keys -t $SESSION_NAME:2 "npm start" C-m
