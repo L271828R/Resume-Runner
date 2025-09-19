@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useQuery } from 'react-query';
-import { Plus, FileText, TrendingUp, Eye, Download } from 'lucide-react';
+import { Plus, FileText, TrendingUp, Eye, Download, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import ResumeVersionForm from '../components/ResumeVersionForm';
 import ResumeViewer from '../components/ResumeViewer';
@@ -9,6 +9,7 @@ const ResumeVersions = () => {
   const [showForm, setShowForm] = useState(false);
   const [editingVersion, setEditingVersion] = useState(null);
   const [viewingVersion, setViewingVersion] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const { data: versions, isLoading: versionsLoading } = useQuery(
     'resume-versions',
@@ -20,12 +21,39 @@ const ResumeVersions = () => {
     () => fetch('/api/resume-versions/success-metrics').then(res => res.json())
   );
 
+  const resumeVersions = versions?.resume_versions || [];
+  const successMetrics = metrics?.success_metrics || [];
+
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+
+  const filteredVersions = useMemo(() => {
+    if (!normalizedSearch) {
+      return resumeVersions;
+    }
+
+    return resumeVersions.filter((version) => {
+      const skills = Array.isArray(version.skills_emphasized)
+        ? version.skills_emphasized.join(' ')
+        : (version.skills_emphasized || '');
+
+      const fields = [
+        version.version_name,
+        version.description,
+        version.filename,
+        version.target_roles,
+        skills,
+        version.tags || ''
+      ];
+
+      return fields.some((field) =>
+        typeof field === 'string' && field.toLowerCase().includes(normalizedSearch)
+      );
+    });
+  }, [resumeVersions, normalizedSearch]);
+
   if (versionsLoading || metricsLoading) {
     return <div>Loading resume versions...</div>;
   }
-
-  const resumeVersions = versions?.resume_versions || [];
-  const successMetrics = metrics?.success_metrics || [];
 
   const getMetricsForVersion = (versionId) => {
     return successMetrics.find(metric => metric.id === versionId) || {
@@ -173,9 +201,34 @@ const ResumeVersions = () => {
         </button>
       </div>
 
-      {resumeVersions.length > 0 ? (
+      {(resumeVersions.length > 0 || normalizedSearch) && (
+        <div className="card" style={{ marginBottom: '24px' }}>
+          <div style={{ position: 'relative', maxWidth: '420px' }}>
+            <Search
+              size={16}
+              style={{
+                position: 'absolute',
+                left: '12px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: '#6b7280'
+              }}
+            />
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Search resumes by name, description, skills, or tags..."
+              style={{ paddingLeft: '40px' }}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+        </div>
+      )}
+
+      {filteredVersions.length > 0 ? (
         <div className="grid" style={{ gap: '24px' }}>
-          {resumeVersions.map((version) => {
+          {filteredVersions.map((version) => {
             const versionMetrics = getMetricsForVersion(version.id);
             const performanceColor = getPerformanceColor(versionMetrics.interview_rate);
 
@@ -523,15 +576,19 @@ const ResumeVersions = () => {
           }}>
             <FileText size={48} style={{ color: '#d1d5db', marginBottom: '16px' }} />
             <h3 style={{ margin: '0 0 8px 0', color: '#374151' }}>
-              No resume versions yet
+              {normalizedSearch ? 'No resumes match your search' : 'No resume versions yet'}
             </h3>
             <p style={{ margin: '0 0 16px 0' }}>
-              Start by adding your first resume version to track its performance across applications
+              {normalizedSearch
+                ? 'Try a different keyword or tag name.'
+                : 'Start by adding your first resume version to track its performance across applications'}
             </p>
-            <button className="btn btn-primary" onClick={() => setShowForm(true)}>
-              <Plus size={16} />
-              Add Your First Resume Version
-            </button>
+            {!normalizedSearch && (
+              <button className="btn btn-primary" onClick={() => setShowForm(true)}>
+                <Plus size={16} />
+                Add Your First Resume Version
+              </button>
+            )}
           </div>
         </div>
       )}

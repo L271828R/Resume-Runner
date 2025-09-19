@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, memo } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from 'react-query';
 import {
@@ -15,24 +15,190 @@ import {
   Trash2,
   XCircle,
   Globe,
-  Briefcase
+  Briefcase,
+  Edit2,
+  Check,
+  X
 } from 'lucide-react';
 import { format } from 'date-fns';
 import ApplicationTimeline from '../components/ApplicationTimeline';
+import ResumeViewer from '../components/ResumeViewer';
+
+const InfoCard = ({ title, actions = null, children }) => (
+  <div className="card">
+    <div style={{
+      display: 'flex',
+      alignItems: actions ? 'center' : 'flex-start',
+      justifyContent: 'space-between',
+      marginBottom: '16px'
+    }}>
+      <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
+        {title}
+      </h3>
+      {actions ? (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {actions}
+        </div>
+      ) : null}
+    </div>
+    {children}
+  </div>
+);
+
+const InfoRow = ({ icon: Icon, label, value, link = null }) => (
+  <div style={{
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+    padding: '12px 0',
+    borderBottom: '1px solid #f3f4f6'
+  }}>
+    <Icon size={16} style={{ color: '#6b7280' }} />
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '2px' }}>
+        {label}
+      </div>
+      <div style={{ color: '#1f2937', fontWeight: '500' }}>
+        {link ? (
+          <a
+            href={link}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: '#3b82f6', textDecoration: 'none' }}
+          >
+            {value} <ExternalLink size={12} style={{ display: 'inline' }} />
+          </a>
+        ) : (
+          value
+        )}
+      </div>
+    </div>
+  </div>
+);
+
+const EditableInfoRow = memo(({
+  icon: Icon,
+  label,
+  value,
+  link = null,
+  field = null,
+  inputType = 'text',
+  options = null,
+  isEditing,
+  onValueChange,
+  placeholder = '',
+  editValue = ''
+}) => {
+  const renderValue = () => {
+    if (link) {
+      return (
+        <a
+          href={link}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ color: '#3b82f6', textDecoration: 'none' }}
+        >
+          {value} <ExternalLink size={12} style={{ display: 'inline' }} />
+        </a>
+      );
+    }
+    return value;
+  };
+
+  const renderInput = () => {
+    if (options) {
+      return (
+        <select
+          className="form-input"
+          value={editValue || ''}
+          onChange={(e) => onValueChange(field, e.target.value)}
+          style={{ fontSize: '14px', padding: '6px 8px', minHeight: 'auto' }}
+        >
+          {options.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      );
+    }
+
+    if (inputType === 'number') {
+      return (
+        <input
+          type="number"
+          className="form-input"
+          value={editValue || ''}
+          onChange={(e) => onValueChange(field, e.target.value)}
+          placeholder={placeholder}
+          style={{ fontSize: '14px', padding: '6px 8px', minHeight: 'auto' }}
+          min="0"
+        />
+      );
+    }
+
+    if (inputType === 'url') {
+      return (
+        <input
+          type="url"
+          className="form-input"
+          value={editValue || ''}
+          onChange={(e) => onValueChange(field, e.target.value)}
+          placeholder={placeholder}
+          style={{ fontSize: '14px', padding: '6px 8px', minHeight: 'auto' }}
+        />
+      );
+    }
+
+    return (
+      <input
+        type="text"
+        className="form-input"
+        value={editValue || ''}
+        onChange={(e) => onValueChange(field, e.target.value)}
+        placeholder={placeholder}
+        style={{ fontSize: '14px', padding: '6px 8px', minHeight: 'auto' }}
+      />
+    );
+  };
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      padding: '12px 0',
+      borderBottom: '1px solid #f3f4f6'
+    }}>
+      <Icon size={16} style={{ color: '#6b7280' }} />
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '2px' }}>
+          {label}
+        </div>
+        <div style={{ color: '#1f2937', fontWeight: '500' }}>
+          {isEditing && field ? renderInput() : renderValue()}
+        </div>
+      </div>
+    </div>
+  );
+});
 
 const ApplicationDetail = () => {
   const { id } = useParams();
   const [showResumeModal, setShowResumeModal] = useState(false);
+  const [resumeViewerVersion, setResumeViewerVersion] = useState(null);
   const [showChangeResumeModal, setShowChangeResumeModal] = useState(false);
   const [selectedResumeId, setSelectedResumeId] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
   const [formValues, setFormValues] = useState({
+    position_title: '',
     job_location: '',
     is_remote: 'unknown',
     application_source: '',
     salary_min: '',
     salary_max: '',
     job_url: '',
-    notes: '',
+    outcome_notes: '',
     job_posting_text: ''
   });
 
@@ -53,13 +219,14 @@ const ApplicationDetail = () => {
   };
 
   const convertFromApp = (application) => ({
+    position_title: application?.position_title || '',
     job_location: application?.job_location || '',
     is_remote: deriveRemoteOption(application?.is_remote),
     application_source: application?.application_source || '',
     salary_min: application?.salary_min != null ? String(application.salary_min) : '',
     salary_max: application?.salary_max != null ? String(application.salary_max) : '',
     job_url: application?.job_url || '',
-    notes: application?.notes || '',
+    outcome_notes: application?.outcome_notes || '',
     job_posting_text: application?.job_posting_text || ''
   });
 
@@ -94,6 +261,8 @@ const ApplicationDetail = () => {
     'resume-versions-select',
     () => fetch('/api/resume-versions').then(res => res.json())
   );
+
+  const resumeVersions = resumeData?.resume_versions || [];
 
   const updateResumeMutation = useMutation(
     async (payload) => {
@@ -142,6 +311,7 @@ const ApplicationDetail = () => {
         if (updatedApplication) {
           setFormValues(convertFromApp(updatedApplication));
         }
+        setIsEditing(false);
       },
       onError: (error) => {
         const message = error?.message || 'Failed to update application';
@@ -179,6 +349,127 @@ const ApplicationDetail = () => {
     setFormValues(convertFromApp(app));
   }, [app]);
 
+  const handleOpenResumeViewer = async () => {
+    if (!app) return;
+
+    const normaliseSkills = (value) => {
+      if (Array.isArray(value)) return value;
+      if (typeof value === 'string') {
+        try {
+          const parsed = JSON.parse(value);
+          if (Array.isArray(parsed)) {
+            return parsed;
+          }
+        } catch (err) {
+          // Not JSON, fall through to split
+        }
+        return value
+          .split(',')
+          .map(skill => skill.trim())
+          .filter(Boolean);
+      }
+      return [];
+    };
+
+    let matchedVersion = resumeVersions.find((version) =>
+      String(version.id) === String(app.resume_version_id)
+    );
+
+    if (!matchedVersion && app.resume_version_id) {
+      try {
+        const response = await fetch(`/api/resume-versions/${app.resume_version_id}`);
+        if (response.ok) {
+          const payload = await response.json();
+          matchedVersion = payload?.resume_version || null;
+        }
+      } catch (fetchError) {
+        console.error('Failed to fetch resume version for viewer', fetchError);
+      }
+    }
+
+    if (matchedVersion && matchedVersion.s3_key) {
+      setResumeViewerVersion({
+        ...matchedVersion,
+        skills_emphasized: normaliseSkills(matchedVersion.skills_emphasized),
+        created_at: matchedVersion.created_at || app.application_date,
+        version_name: matchedVersion.version_name || app.resume_version,
+        filename: matchedVersion.filename || app.resume_version,
+      });
+      setShowResumeModal(true);
+      return;
+    }
+
+    if (app.resume_content && app.resume_content.trim().length > 0) {
+      setResumeViewerVersion(null);
+      setShowResumeModal(true);
+      return;
+    }
+
+    alert('Resume file is not available for this application yet.');
+  };
+
+  const handleCloseResumeModal = () => {
+    setShowResumeModal(false);
+    setResumeViewerVersion(null);
+  };
+
+  const handleFormChange = useCallback((field, value) => {
+    setFormValues(prev => ({ ...prev, [field]: value }));
+  }, []);
+
+  const getCurrentValues = () => {
+    return formValues;
+  };
+
+  const handleFormReset = () => {
+    setFormValues(convertFromApp(app));
+  };
+
+  const handleCancelEdit = () => {
+    setFormValues(convertFromApp(app));
+    setIsEditing(false);
+  };
+
+  const handleStartEdit = () => {
+    setIsEditing(true);
+  };
+
+  const handleFormSubmit = (event) => {
+    if (event) event.preventDefault();
+
+    const trimOrNull = (value) => {
+      if (value == null) return null;
+      const trimmed = value.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    };
+
+    const toNumberOrNull = (value) => {
+      if (value == null) return null;
+      const trimmed = value.trim();
+      if (!trimmed) return null;
+      const parsed = Number(trimmed);
+      return Number.isNaN(parsed) ? null : parsed;
+    };
+
+    const applicationSourceValue = formValues.application_source && formValues.application_source.trim().length > 0
+      ? formValues.application_source
+      : null;
+
+    const payload = {
+      position_title: trimOrNull(formValues.position_title),
+      job_location: trimOrNull(formValues.job_location),
+      is_remote: remoteOptionToValue(formValues.is_remote),
+      application_source: applicationSourceValue,
+      salary_min: toNumberOrNull(formValues.salary_min),
+      salary_max: toNumberOrNull(formValues.salary_max),
+      job_url: trimOrNull(formValues.job_url),
+      outcome_notes: trimOrNull(formValues.outcome_notes),
+      job_posting_text: trimOrNull(formValues.job_posting_text)
+    };
+
+    updateApplicationMutation.mutate(payload);
+  };
+
   if (isLoading) return <div>Loading application details...</div>;
   if (error) return <div>Error loading application</div>;
   if (!app) return <div>Application not found</div>;
@@ -208,103 +499,11 @@ const ApplicationDetail = () => {
     return 'Not specified';
   })();
   const jobUrlDisplay = app.job_url && app.job_url.trim().length > 0 ? app.job_url : null;
-  const notesDisplay = app.notes && app.notes.trim().length > 0 ? app.notes : 'No internal notes yet.';
-
-  const handleMetaCancel = () => {
-    setMetaDraft({
-      job_location: app?.job_location || '',
-      is_remote: deriveRemoteOption(app?.is_remote)
-    });
-    setIsEditingMeta(false);
-  };
-
-  const handleMetaSave = () => {
-    const trimOrNull = (value) => {
-      if (value == null) return null;
-      const trimmed = value.trim();
-      return trimmed.length > 0 ? trimmed : null;
-    };
-
-    const toNumberOrNull = (value) => {
-      if (value == null) return null;
-      const trimmed = value.trim();
-      if (!trimmed) return null;
-      const parsed = Number(trimmed);
-      return Number.isNaN(parsed) ? null : parsed;
-    };
-
-    const applicationSourceValue = metaDraft.application_source && metaDraft.application_source.trim().length > 0
-      ? metaDraft.application_source
-      : null;
-
-    const payload = {
-      job_location: trimOrNull(metaDraft.job_location),
-      is_remote: remoteOptionToValue(metaDraft.is_remote),
-      application_source: applicationSourceValue,
-      salary_min: toNumberOrNull(metaDraft.salary_min),
-      salary_max: toNumberOrNull(metaDraft.salary_max),
-      job_url: trimOrNull(metaDraft.job_url),
-      notes: trimOrNull(metaDraft.notes)
-    };
-    updateApplicationMutation.mutate(payload);
-  };
 
   const getStatusBadge = (status) => {
     const statusClass = `status-badge status-${status}`;
     return <span className={statusClass}>{status.replace('_', ' ')}</span>;
   };
-
-  const InfoCard = ({ title, actions = null, children }) => (
-    <div className="card">
-      <div style={{
-        display: 'flex',
-        alignItems: actions ? 'center' : 'flex-start',
-        justifyContent: 'space-between',
-        marginBottom: '16px'
-      }}>
-        <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600', color: '#1f2937' }}>
-          {title}
-        </h3>
-        {actions ? (
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            {actions}
-          </div>
-        ) : null}
-      </div>
-      {children}
-    </div>
-  );
-
-  const InfoRow = ({ icon: Icon, label, value, link = null }) => (
-    <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      gap: '12px',
-      padding: '12px 0',
-      borderBottom: '1px solid #f3f4f6'
-    }}>
-      <Icon size={16} style={{ color: '#6b7280' }} />
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '2px' }}>
-          {label}
-        </div>
-        <div style={{ color: '#1f2937', fontWeight: '500' }}>
-          {link ? (
-            <a
-              href={link}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ color: '#3b82f6', textDecoration: 'none' }}
-            >
-              {value} <ExternalLink size={12} style={{ display: 'inline' }} />
-            </a>
-          ) : (
-            value
-          )}
-        </div>
-      </div>
-    </div>
-  );
 
   return (
     <div>
@@ -368,41 +567,42 @@ const ApplicationDetail = () => {
       <div className="grid grid-2" style={{ gap: '24px' }}>
         {/* Left Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-          {/* Application Details */}
           <InfoCard
             title="Application Details"
             actions={
-              isEditingMeta ? (
-                <>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {isEditing ? (
+                  <>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={handleCancelEdit}
+                      style={{ padding: '6px 12px', fontSize: '14px' }}
+                      disabled={updateApplicationMutation.isLoading}
+                    >
+                      <X size={14} />
+                      Cancel
+                    </button>
+                    <button
+                      className="btn btn-primary"
+                      onClick={handleFormSubmit}
+                      style={{ padding: '6px 12px', fontSize: '14px' }}
+                      disabled={updateApplicationMutation.isLoading}
+                    >
+                      <Check size={14} />
+                      {updateApplicationMutation.isLoading ? 'Saving...' : 'Save'}
+                    </button>
+                  </>
+                ) : (
                   <button
-                    type="button"
                     className="btn btn-secondary"
-                    onClick={handleMetaCancel}
-                    disabled={updateApplicationMutation.isLoading}
-                    style={{ fontSize: '12px', padding: '4px 10px' }}
+                    onClick={handleStartEdit}
+                    style={{ padding: '6px 12px', fontSize: '14px' }}
                   >
-                    Cancel
+                    <Edit2 size={14} />
+                    Edit
                   </button>
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={handleMetaSave}
-                    disabled={updateApplicationMutation.isLoading}
-                    style={{ fontSize: '12px', padding: '4px 10px' }}
-                  >
-                    {updateApplicationMutation.isLoading ? 'Saving...' : 'Save Details'}
-                  </button>
-                </>
-              ) : (
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  style={{ fontSize: '12px', padding: '4px 10px' }}
-                  onClick={() => setIsEditingMeta(true)}
-                >
-                  Edit Details
-                </button>
-              )
+                )}
+              </div>
             }
           >
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
@@ -412,10 +612,15 @@ const ApplicationDetail = () => {
                 value={app.company_name}
                 link={app.company_website}
               />
-              <InfoRow
+              <EditableInfoRow
                 icon={FileText}
                 label="Position"
                 value={app.position_title}
+                field="position_title"
+                isEditing={isEditing}
+                onValueChange={handleFormChange}
+                placeholder="e.g., Senior Automation Engineer"
+                editValue={formValues.position_title}
               />
               <InfoRow
                 icon={Calendar}
@@ -429,143 +634,78 @@ const ApplicationDetail = () => {
                   value={format(new Date(app.response_date), 'MMMM d, yyyy')}
                 />
               )}
-              <InfoRow
+              <EditableInfoRow
                 icon={DollarSign}
-                label="Salary"
-                value={salaryDisplay}
+                label="Salary Min"
+                value={app.salary_min ? `$${Number(app.salary_min).toLocaleString()}` : 'Not specified'}
+                field="salary_min"
+                inputType="number"
+                isEditing={isEditing}
+                onValueChange={handleFormChange}
+                placeholder="e.g., 90000"
+                editValue={formValues.salary_min}
               />
-              <InfoRow
+              <EditableInfoRow
+                icon={DollarSign}
+                label="Salary Max"
+                value={app.salary_max ? `$${Number(app.salary_max).toLocaleString()}` : 'Not specified'}
+                field="salary_max"
+                inputType="number"
+                isEditing={isEditing}
+                onValueChange={handleFormChange}
+                placeholder="e.g., 120000"
+                editValue={formValues.salary_max}
+              />
+              <EditableInfoRow
                 icon={Briefcase}
                 label="Work Type"
                 value={remoteDisplayLabel}
+                field="is_remote"
+                isEditing={isEditing}
+                onValueChange={handleFormChange}
+                editValue={formValues.is_remote}
+                options={[
+                  { value: 'unknown', label: 'Not specified' },
+                  { value: 'remote', label: 'Remote' },
+                  { value: 'onsite', label: 'On-site' }
+                ]}
               />
-              <InfoRow
+              <EditableInfoRow
                 icon={MapPin}
                 label="Job Location"
                 value={locationDisplay}
+                field="job_location"
+                isEditing={isEditing}
+                onValueChange={handleFormChange}
+                placeholder="e.g., New York, NY"
+                editValue={formValues.job_location}
               />
-              <InfoRow
+              <EditableInfoRow
                 icon={Globe}
                 label="Application Source"
                 value={applicationSourceLabel}
+                field="application_source"
+                isEditing={isEditing}
+                onValueChange={handleFormChange}
+                editValue={formValues.application_source}
+                options={[
+                  { value: '', label: 'Select source' },
+                  ...applicationSourceOptions
+                ]}
               />
-              <InfoRow
+              <EditableInfoRow
                 icon={ExternalLink}
                 label="Job Posting URL"
                 value={jobUrlDisplay || 'Not specified'}
                 link={jobUrlDisplay || undefined}
+                field="job_url"
+                inputType="url"
+                isEditing={isEditing}
+                onValueChange={handleFormChange}
+                placeholder="https://company.com/job"
+                editValue={formValues.job_url}
               />
             </div>
-
-            {isEditingMeta && (
-              <div style={{
-                marginTop: '16px',
-                padding: '16px',
-                border: '1px solid #e5e7eb',
-                borderRadius: '8px',
-                background: '#f9fafb',
-                display: 'flex',
-                flexDirection: 'column',
-                gap: '12px'
-              }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
-                  Work Type
-                </label>
-                <select
-                  className="form-input"
-                  value={metaDraft.is_remote}
-                  onChange={(e) => setMetaDraft(prev => ({ ...prev, is_remote: e.target.value }))}
-                >
-                  <option value="unknown">Not specified</option>
-                  <option value="remote">Remote</option>
-                  <option value="onsite">On-site</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
-                  Job Location
-                </label>
-                <input
-                  type="text"
-                  className="form-input"
-                  value={metaDraft.job_location}
-                  onChange={(e) => setMetaDraft(prev => ({ ...prev, job_location: e.target.value }))}
-                  placeholder="e.g., New York, NY or San Francisco, CA"
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
-                  Application Source
-                </label>
-                <select
-                  className="form-input"
-                  value={metaDraft.application_source}
-                  onChange={(e) => setMetaDraft(prev => ({ ...prev, application_source: e.target.value }))}
-                >
-                  <option value="">Select source</option>
-                  {applicationSourceOptions.map(option => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div style={{ display: 'flex', gap: '12px' }}>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
-                    Salary Min
-                  </label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={metaDraft.salary_min}
-                    onChange={(e) => setMetaDraft(prev => ({ ...prev, salary_min: e.target.value }))}
-                    placeholder="e.g., 90000"
-                    min="0"
-                  />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
-                    Salary Max
-                  </label>
-                  <input
-                    type="number"
-                    className="form-input"
-                    value={metaDraft.salary_max}
-                    onChange={(e) => setMetaDraft(prev => ({ ...prev, salary_max: e.target.value }))}
-                    placeholder="e.g., 120000"
-                    min="0"
-                  />
-                </div>
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
-                  Job Posting URL
-                </label>
-                <input
-                  type="url"
-                  className="form-input"
-                  value={metaDraft.job_url}
-                  onChange={(e) => setMetaDraft(prev => ({ ...prev, job_url: e.target.value }))}
-                  placeholder="https://company.com/job"
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '13px', color: '#374151', marginBottom: '6px', fontWeight: 500 }}>
-                  Internal Notes
-                </label>
-                <textarea
-                  className="form-input"
-                  rows={3}
-                  style={{ resize: 'vertical' }}
-                  value={metaDraft.notes}
-                  onChange={(e) => setMetaDraft(prev => ({ ...prev, notes: e.target.value }))}
-                  placeholder="Add private notes about this application"
-                />
-              </div>
-            </div>
-          )}
 
             <div style={{
               marginTop: '16px',
@@ -575,57 +715,20 @@ const ApplicationDetail = () => {
               flexDirection: 'column',
               gap: '12px'
             }}>
-              <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between'
-              }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '14px', fontWeight: 600, color: '#1f2937' }}>
                   Job Posting Snapshot
                 </span>
-                {!isEditingDescription && (
-                  <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '12px', padding: '4px 10px' }}
-                    onClick={() => setIsEditingDescription(true)}
-                  >
-                    Edit
-                  </button>
-                )}
               </div>
-
-              {isEditingDescription ? (
-                <>
-                  <textarea
-                    value={descriptionDraft}
-                    onChange={(e) => setDescriptionDraft(e.target.value)}
-                    rows={10}
-                    className="form-input"
-                    style={{ resize: 'vertical', minHeight: '160px' }}
-                    placeholder="Paste or write the job description here"
-                  />
-                  <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                    <button
-                      className="btn btn-secondary"
-                      type="button"
-                      onClick={() => {
-                        setDescriptionDraft(app?.job_posting_text || '');
-                        setIsEditingDescription(false);
-                      }}
-                      disabled={updateApplicationMutation.isLoading}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={() => updateApplicationMutation.mutate({ job_posting_text: descriptionDraft })}
-                      disabled={updateApplicationMutation.isLoading}
-                    >
-                      {updateApplicationMutation.isLoading ? 'Saving...' : 'Save Description'}
-                    </button>
-                  </div>
-                </>
+              {isEditing ? (
+                <textarea
+                  className="form-input"
+                  rows={8}
+                  style={{ resize: 'vertical', fontSize: '14px' }}
+                  value={formValues.job_posting_text}
+                  onChange={(e) => handleFormChange('job_posting_text', e.target.value)}
+                  placeholder="Paste or write the job description here"
+                />
               ) : (
                 <div style={{
                   maxHeight: '220px',
@@ -641,31 +744,51 @@ const ApplicationDetail = () => {
                 }}>
                   {app.job_posting_text && app.job_posting_text.trim().length > 0
                     ? app.job_posting_text
-                    : 'No description captured yet. Click Edit to add one.'}
+                    : 'No description captured yet.'}
                 </div>
               )}
             </div>
 
-            {!isEditingMeta && (
-              <div style={{
-                marginTop: '16px',
-                padding: '12px',
-                background: '#f8fafc',
-                borderRadius: '8px',
-                border: '1px solid #e5e7eb'
-              }}>
-                <div style={{ fontSize: '13px', color: '#6b7280', marginBottom: '6px', fontWeight: 600 }}>
+            <div style={{
+              marginTop: '16px',
+              paddingTop: '16px',
+              borderTop: '1px solid #f3f4f6',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '14px', fontWeight: 600, color: '#1f2937' }}>
                   Internal Notes
-                </div>
-                <div style={{ fontSize: '14px', color: '#374151', lineHeight: 1.6 }}>
-                  {notesDisplay}
-                </div>
+                </span>
               </div>
-            )}
+              {isEditing ? (
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  style={{ resize: 'vertical', fontSize: '14px' }}
+                  value={formValues.outcome_notes}
+                  onChange={(e) => handleFormChange('outcome_notes', e.target.value)}
+                  placeholder="Add private notes about this application"
+                />
+              ) : (
+                <div style={{
+                  fontSize: '14px',
+                  lineHeight: '1.6',
+                  color: '#374151',
+                  whiteSpace: 'pre-wrap',
+                  border: '1px solid #e5e7eb',
+                  borderRadius: '8px',
+                  padding: '12px',
+                  background: '#f9fafb',
+                  minHeight: '40px'
+                }}>
+                  {app.outcome_notes && app.outcome_notes.trim().length > 0 ? app.outcome_notes : 'No internal notes yet.'}
+                </div>
+              )}
+            </div>
           </InfoCard>
-
         </div>
-
         {/* Right Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Resume Information */}
@@ -689,7 +812,7 @@ const ApplicationDetail = () => {
                   <button
                     className="btn btn-secondary"
                     style={{ fontSize: '12px', padding: '4px 8px' }}
-                    onClick={() => setShowResumeModal(true)}
+                    onClick={handleOpenResumeViewer}
                   >
                     View Resume
                   </button>
@@ -772,64 +895,71 @@ const ApplicationDetail = () => {
 
       {/* Resume Modal */}
       {showResumeModal && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(0, 0, 0, 0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          zIndex: 1000
-        }}>
+        resumeViewerVersion ? (
+          <ResumeViewer
+            version={resumeViewerVersion}
+            onClose={handleCloseResumeModal}
+          />
+        ) : (
           <div style={{
-            background: 'white',
-            maxWidth: '80vw',
-            maxHeight: '80vh',
-            width: '800px',
-            borderRadius: '8px',
-            overflow: 'hidden',
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'rgba(0, 0, 0, 0.5)',
             display: 'flex',
-            flexDirection: 'column'
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000
           }}>
             <div style={{
-              padding: '16px 24px',
-              borderBottom: '1px solid #e2e8f0',
+              background: 'white',
+              maxWidth: '80vw',
+              maxHeight: '80vh',
+              width: '800px',
+              borderRadius: '8px',
+              overflow: 'hidden',
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between'
+              flexDirection: 'column'
             }}>
-              <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
-                {app.resume_version}
-              </h3>
-              <button
-                onClick={() => setShowResumeModal(false)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  fontSize: '24px',
-                  cursor: 'pointer',
-                  color: '#6b7280'
-                }}
-              >
-                ×
-              </button>
-            </div>
-            <div style={{
-              padding: '24px',
-              overflow: 'auto',
-              flex: 1,
-              fontSize: '14px',
-              lineHeight: '1.6',
-              whiteSpace: 'pre-wrap',
-              fontFamily: 'monospace'
-            }}>
-              {app.resume_content || 'Resume content not available'}
+              <div style={{
+                padding: '16px 24px',
+                borderBottom: '1px solid #e2e8f0',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+              }}>
+                <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '600' }}>
+                  {app.resume_version}
+                </h3>
+                <button
+                  onClick={handleCloseResumeModal}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '24px',
+                    cursor: 'pointer',
+                    color: '#6b7280'
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+              <div style={{
+                padding: '24px',
+                overflow: 'auto',
+                flex: 1,
+                fontSize: '14px',
+                lineHeight: '1.6',
+                whiteSpace: 'pre-wrap',
+                fontFamily: 'monospace'
+              }}>
+                {app.resume_content || 'Resume content not available'}
+              </div>
             </div>
           </div>
-        </div>
+        )
       )}
 
       {/* Change Resume Modal */}

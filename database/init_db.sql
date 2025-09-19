@@ -132,6 +132,29 @@ CREATE TABLE communications (
     FOREIGN KEY (company_id) REFERENCES companies(id)
 );
 
+-- Application events timeline table - track detailed progress for each application
+CREATE TABLE application_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    event_type TEXT DEFAULT 'note',
+    title TEXT NOT NULL,
+    description TEXT,
+    event_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    event_time TEXT,
+    outcome TEXT,
+    next_steps TEXT,
+    attendees TEXT,
+    location TEXT,
+    meeting_link TEXT,
+    documents_shared TEXT,
+    duration_minutes INTEGER,
+    follow_up_required BOOLEAN DEFAULT 0,
+    follow_up_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
+);
+
 -- AI insights table - store AI-generated insights for future use
 CREATE TABLE ai_insights (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,6 +174,8 @@ CREATE INDEX idx_applications_date ON applications(application_date);
 CREATE INDEX idx_job_postings_company ON job_postings(company_id);
 CREATE INDEX idx_communications_application ON communications(application_id);
 CREATE INDEX idx_recruiters_status ON recruiters(relationship_status);
+CREATE INDEX idx_application_events_application ON application_events(application_id);
+CREATE INDEX idx_application_events_event_date ON application_events(event_date);
 
 -- Views for common queries
 

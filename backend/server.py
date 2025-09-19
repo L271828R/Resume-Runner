@@ -1131,10 +1131,25 @@ def update_application(app_id):
             'outcome_notes',
             'status',
             'job_posting_id',
-            'is_remote'
+            'is_remote',
+            'application_source',
+            'salary_min',
+            'salary_max',
+            'position_title'
         }
 
         update_payload = {k: v for k, v in data.items() if k in allowed_fields}
+
+        for numeric_field in ['salary_min', 'salary_max', 'job_posting_id']:
+            if numeric_field in update_payload:
+                value = update_payload[numeric_field]
+                if value in (None, ''):
+                    update_payload[numeric_field] = None
+                else:
+                    try:
+                        update_payload[numeric_field] = int(value)
+                    except (TypeError, ValueError):
+                        return jsonify({'error': f'Invalid value for {numeric_field}'}), 400
         if not update_payload:
             return jsonify({'error': 'No valid fields supplied'}), 400
 

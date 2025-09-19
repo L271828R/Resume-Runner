@@ -865,7 +865,11 @@ class ResumeRunnerDB:
             'outcome_notes',
             'status',
             'job_posting_id',
-            'is_remote'
+            'is_remote',
+            'application_source',
+            'salary_min',
+            'salary_max',
+            'position_title'
         }
 
         updates = []
@@ -888,6 +892,14 @@ class ResumeRunnerDB:
                             value = None
                     else:
                         value = 1 if bool(value) else 0
+                elif field in {'salary_min', 'salary_max', 'job_posting_id'}:
+                    if value in (None, ''):
+                        value = None
+                    else:
+                        try:
+                            value = int(value)
+                        except (TypeError, ValueError):
+                            continue
                 updates.append(f"{field} = ?")
                 values.append(value)
 
