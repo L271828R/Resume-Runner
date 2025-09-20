@@ -19,7 +19,8 @@ import {
   Clock,
   Phone,
   Mail,
-  Globe
+  Globe,
+  Linkedin
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -228,6 +229,17 @@ const CompanyDetail = () => {
               Visit Website
             </a>
           )}
+          {company.linkedin_url && (
+            <a
+              href={company.linkedin_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-secondary"
+            >
+              <Linkedin size={16} />
+              LinkedIn
+            </a>
+          )}
           <button className="btn btn-primary">
             <Plus size={16} />
             New Application
@@ -272,6 +284,22 @@ const CompanyDetail = () => {
                 </div>
               )}
 
+              {company.linkedin_url && (
+                <div>
+                  <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>LinkedIn</div>
+                  <a href={company.linkedin_url} target="_blank" rel="noopener noreferrer" style={{
+                    color: '#0a66c2',
+                    textDecoration: 'none',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px'
+                  }}>
+                    {company.linkedin_url.replace('https://', '').replace('http://', '')}
+                    <ExternalLink size={12} />
+                  </a>
+                </div>
+              )}
+
               {company.industry && (
                 <div>
                   <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Industry</div>
@@ -290,6 +318,15 @@ const CompanyDetail = () => {
                 <div>
                   <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Headquarters</div>
                   <div style={{ fontSize: '16px', color: '#1f2937' }}>{company.headquarters}</div>
+                </div>
+              )}
+
+              {company.notes && (
+                <div>
+                  <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '4px' }}>Notes</div>
+                  <div style={{ fontSize: '16px', color: '#1f2937', lineHeight: 1.6 }}>
+                    {company.notes}
+                  </div>
                 </div>
               )}
             </div>

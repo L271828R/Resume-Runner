@@ -359,6 +359,25 @@ const Companies = () => {
                     Visit Website <ExternalLink size={12} />
                   </a>
                 )}
+
+                {company.linkedin_url && (
+                  <a
+                    href={company.linkedin_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                      color: '#0a66c2',
+                      textDecoration: 'none',
+                      fontSize: '14px',
+                      marginBottom: '16px'
+                    }}
+                  >
+                    LinkedIn Profile <ExternalLink size={12} />
+                  </a>
+                )}
               </div>
 
                 <div style={{
@@ -391,6 +410,20 @@ const Companies = () => {
               </div>
 
               <CompanyEventSummary companyId={company.id} />
+
+              {company.notes && (
+                <div style={{
+                  marginTop: '16px',
+                  padding: '12px 16px',
+                  background: '#f8fafc',
+                  borderRadius: '8px',
+                  border: '1px solid #e2e8f0',
+                  color: '#374151',
+                  lineHeight: 1.5
+                }}>
+                  {company.notes}
+                </div>
+              )}
 
               {/* Company Activity Stats */}
               <div style={{

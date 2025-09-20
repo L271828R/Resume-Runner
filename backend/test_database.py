@@ -26,6 +26,12 @@ class TestCompanyOperations:
         assert isinstance(company_id, int)
         assert company_id > 0
 
+        company = temp_db.get_company(company_id)
+        assert company is not None
+        assert company['notes'] == sample_company_data['notes']
+        assert company['is_remote_friendly'] == sample_company_data['is_remote_friendly']
+        assert company['linkedin_url'] == sample_company_data['linkedin_url']
+
     def test_get_company(self, populated_db, sample_company_data):
         """Test retrieving a company by ID"""
         db = populated_db['db']
@@ -38,6 +44,8 @@ class TestCompanyOperations:
         assert company['website'] == sample_company_data['website']
         assert company['industry'] == sample_company_data['industry']
         assert company['is_remote_friendly'] == sample_company_data['is_remote_friendly']
+        assert company['notes'] == sample_company_data['notes']
+        assert company['linkedin_url'] == sample_company_data['linkedin_url']
 
     def test_find_company_by_name(self, populated_db, sample_company_data):
         """Test finding company by name"""
@@ -62,7 +70,7 @@ class TestCompanyOperations:
         company = temp_db.find_company_by_name('NonExistent Company')
         assert company is None
 
-    def test_get_company_activity(self, populated_db):
+    def test_get_company_activity(self, populated_db, sample_company_data):
         """Test getting company activity metrics"""
         db = populated_db['db']
 
@@ -74,6 +82,10 @@ class TestCompanyOperations:
         # Check if our test company is in the results
         company_names = [activity['name'] for activity in activities]
         assert 'Test Company Inc.' in company_names
+
+        target = next(activity for activity in activities if activity['name'] == 'Test Company Inc.')
+        assert target['notes'] == sample_company_data['notes']
+        assert target['linkedin_url'] == sample_company_data['linkedin_url']
 
 
 class TestResumeVersionOperations:

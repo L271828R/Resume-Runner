@@ -44,22 +44,44 @@ class ResumeRunnerDB:
     # Company operations
     def add_company(self, name: str, website: str = None, industry: str = None,
                    company_size: str = None, headquarters: str = None,
-                   is_remote_friendly: bool = False, **kwargs) -> int:
+                   is_remote_friendly: bool = False, notes: str = None,
+                   linkedin_url: str = None, **kwargs) -> int:
         """Add a new company to the database"""
+        remote_flag = int(bool(is_remote_friendly))
+        sanitized_notes = None
+        sanitized_linkedin = None
+
+        if notes is None:
+            notes = kwargs.get('notes')
+        if isinstance(notes, str):
+            stripped = notes.strip()
+            sanitized_notes = stripped or None
+        else:
+            sanitized_notes = notes
+
+        if linkedin_url is None:
+            linkedin_url = kwargs.get('linkedin_url')
+        if isinstance(linkedin_url, str):
+            linkedin_url = linkedin_url.strip()
+            sanitized_linkedin = linkedin_url or None
+        else:
+            sanitized_linkedin = linkedin_url
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO companies (name, website, industry, company_size,
-                                     headquarters, is_remote_friendly)
-                VALUES (?, ?, ?, ?, ?, ?)
-            """, (name, website, industry, company_size, headquarters, is_remote_friendly))
+                                     headquarters, is_remote_friendly, notes, linkedin_url)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (name, website, industry, company_size, headquarters, remote_flag,
+                  sanitized_notes, sanitized_linkedin))
             return cursor.lastrowid
 
     def update_company(self, company_id: int, **kwargs) -> bool:
         """Update company fields dynamically"""
         allowed_fields = {
             'name', 'website', 'industry', 'company_size', 'headquarters',
-            'is_remote_friendly', 'notes', 'is_starred'
+            'is_remote_friendly', 'notes', 'is_starred', 'linkedin_url'
         }
 
         updates = []
@@ -69,6 +91,8 @@ class ResumeRunnerDB:
             if field in allowed_fields and value is not None:
                 if field in {'is_remote_friendly', 'is_starred'}:
                     value = int(bool(value))
+                elif field in {'notes', 'linkedin_url'} and isinstance(value, str):
+                    value = value.strip() or None
                 updates.append(f"{field} = ?")
                 values.append(value)
 

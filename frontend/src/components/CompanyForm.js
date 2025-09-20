@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 const defaultFormState = {
   name: '',
   website: '',
+  linkedin_url: '',
   industry: '',
   company_size: '',
   headquarters: '',
@@ -21,6 +22,7 @@ const CompanyForm = ({ isOpen, onClose, onSubmit, company = null }) => {
       setFormData({
         name: company.name || '',
         website: company.website || '',
+        linkedin_url: company.linkedin_url || '',
         industry: company.industry || '',
         company_size: company.company_size || '',
         headquarters: company.headquarters || '',
@@ -104,6 +106,18 @@ const CompanyForm = ({ isOpen, onClose, onSubmit, company = null }) => {
               value={formData.website}
               onChange={handleChange}
               placeholder="https://company.com"
+              style={styles.input}
+            />
+          </div>
+
+          <div style={styles.fieldGroup}>
+            <label style={styles.label}>LinkedIn URL</label>
+            <input
+              type="url"
+              name="linkedin_url"
+              value={formData.linkedin_url}
+              onChange={handleChange}
+              placeholder="https://www.linkedin.com/company/example"
               style={styles.input}
             />
           </div>

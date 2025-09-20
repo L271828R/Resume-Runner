@@ -30,6 +30,8 @@ def test_create_company(client, temp_db):
         'name': 'NewCo',
         'website': 'https://newco.com',
         'industry': 'AI',
+        'notes': 'Focuses on AI research partnerships.',
+        'linkedin_url': 'https://www.linkedin.com/company/newco/'
     }
     response = client.post('/api/companies', data=json.dumps(new_company), content_type='application/json')
     assert response.status_code == 201
@@ -37,6 +39,8 @@ def test_create_company(client, temp_db):
     assert 'company' in data
     assert data['company']['name'] == 'NewCo'
     assert data['company']['id'] is not None
+    assert data['company']['linkedin_url'] == new_company['linkedin_url']
+    assert data['company']['notes'] == new_company['notes']
 
 def test_get_company_by_id(client, populated_db):
     """Test getting a single company by its ID"""
@@ -47,17 +51,23 @@ def test_get_company_by_id(client, populated_db):
     assert 'company' in data
     assert data['company']['id'] == company_id
     assert data['company']['name'] == 'Test Company Inc.'
+    assert data['company']['notes'] is not None
+    assert data['company']['linkedin_url'] is not None
 
 def test_update_company(client, populated_db):
     """Test updating a company's details"""
     company_id = populated_db['company_id']
-    update_data = {'industry': 'FinTech'}
+    update_data = {
+        'industry': 'FinTech',
+        'linkedin_url': 'https://www.linkedin.com/company/test-company-fintech/'
+    }
     response = client.put(f'/api/companies/{company_id}', data=json.dumps(update_data), content_type='application/json')
     assert response.status_code == 200
     data = json.loads(response.data)
     assert 'company' in data
     assert data['company']['industry'] == 'FinTech'
     assert data['company']['name'] == 'Test Company Inc.'
+    assert data['company']['linkedin_url'] == update_data['linkedin_url']
 
 def test_get_resume_versions(client, populated_db):
     """Test getting all resume versions"""

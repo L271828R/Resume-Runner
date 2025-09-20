@@ -58,7 +58,9 @@ def sample_company_data():
         'industry': 'Technology',
         'company_size': 'Medium (100-1000)',
         'headquarters': 'San Francisco, CA',
-        'is_remote_friendly': True
+        'is_remote_friendly': True,
+        'notes': 'Prefers remote-first teams with flexible hours.',
+        'linkedin_url': 'https://www.linkedin.com/company/test-company-inc/'
     }
 
 

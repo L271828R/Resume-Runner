@@ -2,6 +2,7 @@ CREATE TABLE companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     website TEXT,
+    linkedin_url TEXT,
     industry TEXT,
     company_size TEXT,
     headquarters TEXT,
@@ -160,6 +161,14 @@ CREATE VIEW company_activity AS
 SELECT
     c.id,
     c.name,
+    c.website,
+    c.industry,
+    c.company_size,
+    c.headquarters,
+    c.is_remote_friendly,
+    c.updated_at,
+    c.notes,
+    c.linkedin_url,
     COUNT(jp.id) as total_jobs_posted,
     COUNT(a.id) as applications_sent,
     MAX(jp.date_posted) as last_job_posted,
@@ -169,8 +178,9 @@ SELECT
 FROM companies c
 LEFT JOIN job_postings jp ON c.id = jp.company_id
 LEFT JOIN applications a ON c.id = a.company_id
-GROUP BY c.id, c.name
-/* company_activity(id,name,total_jobs_posted,applications_sent,last_job_posted,avg_salary_min,avg_salary_max,remote_jobs) */;
+GROUP BY c.id, c.name, c.website, c.industry, c.company_size, c.headquarters,
+         c.is_remote_friendly, c.updated_at, c.notes, c.linkedin_url
+/* company_activity(id,name,website,industry,company_size,headquarters,is_remote_friendly,updated_at,notes,linkedin_url,total_jobs_posted,applications_sent,last_job_posted,avg_salary_min,avg_salary_max,remote_jobs) */;
 CREATE TABLE tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
