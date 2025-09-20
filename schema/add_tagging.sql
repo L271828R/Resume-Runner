@@ -1,5 +1,5 @@
 -- Tags table - stores all available tags
-CREATE TABLE tags (
+CREATE TABLE IF NOT EXISTS tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
     description TEXT,
@@ -8,7 +8,7 @@ CREATE TABLE tags (
 );
 
 -- Resume tags junction table - many-to-many relationship
-CREATE TABLE resume_tags (
+CREATE TABLE IF NOT EXISTS resume_tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     resume_version_id INTEGER NOT NULL,
     tag_id INTEGER NOT NULL,
@@ -19,12 +19,12 @@ CREATE TABLE resume_tags (
 );
 
 -- Indexes for efficient searching
-CREATE INDEX idx_resume_tags_resume ON resume_tags(resume_version_id);
-CREATE INDEX idx_resume_tags_tag ON resume_tags(tag_id);
-CREATE INDEX idx_tags_name ON tags(name);
+CREATE INDEX IF NOT EXISTS idx_resume_tags_resume ON resume_tags(resume_version_id);
+CREATE INDEX IF NOT EXISTS idx_resume_tags_tag ON resume_tags(tag_id);
+CREATE INDEX IF NOT EXISTS idx_tags_name ON tags(name);
 
 -- View for resume versions with their tags
-CREATE VIEW resume_versions_with_tags AS
+CREATE VIEW IF NOT EXISTS resume_versions_with_tags AS
 SELECT
     rv.id,
     rv.filename,
