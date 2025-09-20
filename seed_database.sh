@@ -172,10 +172,11 @@ initialize_database() {
     fi
 
     # Create/recreate database from schema files
+    print_colored $BLUE "📄 Applying init schema from: $SCHEMA_DIR/init_db.sql"
     if sqlite3 "$db_path" < "$SCHEMA_DIR/init_db.sql"; then
-        print_colored $GREEN "✅ Main schema applied successfully"
+        print_colored $GREEN "✅ Init schema applied successfully"
     else
-        print_colored $RED "❌ Failed to apply main schema"
+        print_colored $RED "❌ Failed to apply init schema"
         exit 1
     fi
 
