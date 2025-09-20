@@ -9,6 +9,16 @@ Resume Runner addresses the resume/application management chaos that comes with 
 - **Frontend:** React 18 with React Router and React Query. Pages cover dashboard metrics, application tracking, resume catalogs, and recruiter management, all backed by shared components such as forms, timelines, and tag selectors.
 - **Tooling:** `start-dev.sh` spins up a tmux workspace that launches backend, frontend, database seeding, and optional gobang GUI. Additional CLI scripts handle tagging workflows and database inspection.
 
+## Database Schema Updates
+When altering tables, indexes, or views, keep the checked-in schema aligned with the live SQLite file so migrations can run cleanly in production. Recommended flow:
+1. Apply your schema changes locally (via migration script or direct SQL) and verify the app/tests against `database/resume_runner.db`.
+2. Export the fresh schema with `sqlite3 database/resume_runner.db ".schema" > schema/init_db.sql.tmp`.
+3. Strip SQLite bookkeeping tables (e.g., `sqlite_sequence`) and tidy any wrapped column definitions, then replace `schema/init_db.sql`.
+4. Spot-check resume-related tables (`resume_versions`, `recruiters`, `applications`) to confirm new columns are present before committing.
+5. Delete the temporary dump file and commit the updated SQL alongside your change.
+
+This keeps prod-ready migrations reproducible and prevents the extra SQLite tables from sneaking into version control.
+
 ## Key Components and Files
 - `backend/server.py` – Main Flask app exposing CRUD + analytics endpoints and auto-generated Swagger docs at `/docs`.
 - `database/db_helper.py` – Centralized SQLite helper with methods for each domain area plus tagging APIs consumed by CLI tools and HTTP routes.

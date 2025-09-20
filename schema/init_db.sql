@@ -28,8 +28,10 @@ CREATE TABLE resume_versions (
     success_rate REAL DEFAULT 0.0, -- interviews/applications ratio
     word_count INTEGER, -- For quick analysis
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-, editable_s3_key TEXT, editable_filename TEXT);
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    editable_s3_key TEXT,
+    editable_filename TEXT
+);
 CREATE TABLE recruiters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -45,7 +47,24 @@ CREATE TABLE recruiters (
     success_rate REAL DEFAULT 0.0, -- How many of their referrals led to interviews
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, is_starred BOOLEAN DEFAULT 0, position_title TEXT, department TEXT, manager_name TEXT, manager_email TEXT, manager_phone TEXT, manager_linkedin_url TEXT, account_name TEXT, account_type TEXT, office_location TEXT, timezone TEXT, phone_secondary TEXT, preferred_contact_method TEXT, is_manager BOOLEAN DEFAULT FALSE, team_size INTEGER, decision_authority TEXT, primary_company_id INTEGER REFERENCES companies(id),
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    is_starred BOOLEAN DEFAULT 0,
+    position_title TEXT,
+    department TEXT,
+    manager_name TEXT,
+    manager_email TEXT,
+    manager_phone TEXT,
+    manager_linkedin_url TEXT,
+    account_name TEXT,
+    account_type TEXT,
+    office_location TEXT,
+    timezone TEXT,
+    phone_secondary TEXT,
+    preferred_contact_method TEXT,
+    is_manager BOOLEAN DEFAULT FALSE,
+    team_size INTEGER,
+    decision_authority TEXT,
+    primary_company_id INTEGER REFERENCES companies(id),
     FOREIGN KEY (current_resume_version_id) REFERENCES resume_versions(id)
 );
 CREATE TABLE job_postings (
@@ -67,38 +86,6 @@ CREATE TABLE job_postings (
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (company_id) REFERENCES companies(id)
-);
-CREATE TABLE applications (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    company_id INTEGER NOT NULL,
-    job_posting_id INTEGER, -- May be NULL for cold applications
-    recruiter_id INTEGER, -- May be NULL for direct applications
-    resume_version_id INTEGER,
-    position_title TEXT NOT NULL,
-    application_date DATE NOT NULL,
-    application_source TEXT, -- 'LinkedIn', 'Indeed', 'Company Website', 'Recruiter', etc.
-    cover_letter_s3_key TEXT, -- S3 key for cover letter used
-    job_posting_text TEXT, -- Full text snapshot of the job posting
-    job_location TEXT,
-    job_url TEXT,
-    salary_min INTEGER,
-    salary_max INTEGER,
-    is_remote BOOLEAN DEFAULT 0,
-    status TEXT DEFAULT 'applied', -- 'applied', 'phone_screen', 'interview', 'offer', 'rejected', 'withdrawn'
-    response_date DATE,
-    interview_dates TEXT, -- JSON array of interview dates
-    salary_offered INTEGER,
-    rejection_reason TEXT,
-    feedback_received TEXT,
-    follow_up_dates TEXT, -- JSON array of follow-up dates
-    outcome_notes TEXT,
-    ai_match_score REAL, -- How well this matched your profile (for AI training)
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (company_id) REFERENCES companies(id),
-    FOREIGN KEY (job_posting_id) REFERENCES job_postings(id),
-    FOREIGN KEY (recruiter_id) REFERENCES recruiters(id),
-    FOREIGN KEY (resume_version_id) REFERENCES resume_versions(id)
 );
 CREATE TABLE communications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -148,9 +135,6 @@ CREATE TABLE ai_insights (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_validated BOOLEAN DEFAULT NULL -- TRUE if proven correct, FALSE if wrong, NULL if unknown
 );
-CREATE INDEX idx_applications_company ON applications(company_id);
-CREATE INDEX idx_applications_status ON applications(status);
-CREATE INDEX idx_applications_date ON applications(application_date);
 CREATE INDEX idx_job_postings_company ON job_postings(company_id);
 CREATE INDEX idx_communications_application ON communications(application_id);
 CREATE INDEX idx_recruiters_status ON recruiters(relationship_status);
@@ -187,31 +171,6 @@ LEFT JOIN job_postings jp ON c.id = jp.company_id
 LEFT JOIN applications a ON c.id = a.company_id
 GROUP BY c.id, c.name
 /* company_activity(id,name,total_jobs_posted,applications_sent,last_job_posted,avg_salary_min,avg_salary_max,remote_jobs) */;
-CREATE VIEW active_applications AS
-SELECT
-    a.id,
-    c.name as company_name,
-    a.position_title,
-    a.application_date,
-    a.status,
-    rv.version_name as resume_used,
-    r.name as recruiter_name,
-    r.primary_contact_name as recruiter_primary_contact,
-    COALESCE(a.salary_min, jp.salary_min) as salary_min,
-    COALESCE(a.salary_max, jp.salary_max) as salary_max,
-    COALESCE(a.is_remote, jp.is_remote) as is_remote,
-    a.job_posting_text,
-    a.job_location,
-    a.job_url,
-    JULIANDAY('now') - JULIANDAY(a.application_date) as days_since_application
-FROM applications a
-JOIN companies c ON a.company_id = c.id
-LEFT JOIN resume_versions rv ON a.resume_version_id = rv.id
-LEFT JOIN recruiters r ON a.recruiter_id = r.id
-LEFT JOIN job_postings jp ON a.job_posting_id = jp.id
-WHERE a.status NOT IN ('rejected', 'withdrawn', 'offer')
-ORDER BY a.application_date DESC
-/* active_applications(id,company_name,position_title,application_date,status,resume_used,recruiter_name,recruiter_primary_contact,salary_min,salary_max,is_remote,job_posting_text,job_location,job_url,days_since_application) */;
 CREATE TABLE tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -337,3 +296,63 @@ GROUP BY r.id, r.name, r.primary_contact_name, r.email, r.phone, r.company, r.li
          r.current_resume_version_id, r.last_contact_date, r.relationship_status,
          r.success_rate, r.notes, r.is_starred, r.created_at, r.updated_at
 /* recruiter_dashboard(id,name,primary_contact_name,email,phone,company,linkedin_url,specialties,current_resume_version_id,last_contact_date,relationship_status,success_rate,notes,is_starred,created_at,updated_at,total_applications,successful_applications,last_application_date,last_communication,recent_applications) */;
+CREATE TABLE applications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    job_posting_id INTEGER,
+    recruiter_id INTEGER,
+    resume_version_id INTEGER,
+    position_title TEXT NOT NULL,
+    application_date DATE NOT NULL,
+    application_source TEXT,
+    cover_letter_s3_key TEXT,
+    job_posting_text TEXT,
+    job_location TEXT,
+    job_url TEXT,
+    salary_min INTEGER,
+    salary_max INTEGER,
+    is_remote BOOLEAN DEFAULT 0,
+    status TEXT DEFAULT 'applied',
+    response_date DATE,
+    interview_dates TEXT,
+    salary_offered INTEGER,
+    rejection_reason TEXT,
+    feedback_received TEXT,
+    follow_up_dates TEXT,
+    outcome_notes TEXT,
+    ai_match_score REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES companies(id),
+    FOREIGN KEY (job_posting_id) REFERENCES job_postings(id),
+    FOREIGN KEY (recruiter_id) REFERENCES recruiters(id),
+    FOREIGN KEY (resume_version_id) REFERENCES resume_versions(id)
+);
+CREATE INDEX idx_applications_company ON applications(company_id);
+CREATE INDEX idx_applications_status ON applications(status);
+CREATE INDEX idx_applications_date ON applications(application_date);
+CREATE VIEW active_applications AS
+SELECT
+    a.id,
+    c.name as company_name,
+    a.position_title,
+    a.application_date,
+    a.status,
+    rv.version_name as resume_used,
+    r.name as recruiter_name,
+    r.primary_contact_name as recruiter_primary_contact,
+    COALESCE(a.salary_min, jp.salary_min) as salary_min,
+    COALESCE(a.salary_max, jp.salary_max) as salary_max,
+    COALESCE(a.is_remote, jp.is_remote) as is_remote,
+    a.job_posting_text,
+    a.job_location,
+    a.job_url,
+    JULIANDAY('now') - JULIANDAY(a.application_date) as days_since_application
+FROM applications a
+JOIN companies c ON a.company_id = c.id
+LEFT JOIN resume_versions rv ON a.resume_version_id = rv.id
+LEFT JOIN recruiters r ON a.recruiter_id = r.id
+LEFT JOIN job_postings jp ON a.job_posting_id = jp.id
+WHERE a.status NOT IN ('rejected', 'withdrawn', 'offer')
+ORDER BY a.application_date DESC
+/* active_applications(id,company_name,position_title,application_date,status,resume_used,recruiter_name,recruiter_primary_contact,salary_min,salary_max,is_remote,job_posting_text,job_location,job_url,days_since_application) */;
