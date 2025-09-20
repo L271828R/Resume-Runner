@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
-import { useQuery } from 'react-query';
+import { useMutation, useQuery, useQueryClient } from 'react-query';
 import {
   X,
   Building2,
@@ -36,6 +36,7 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
   });
 
   // Register validation rules for SearchableDropdown fields
+  register('company_id', { required: 'Company is required' });
   register('application_source', { required: 'Application source is required' });
   register('resume_version_id', { required: 'Resume version is required' });
 
@@ -44,6 +45,51 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
     'companies',
     () => fetch('/api/companies').then(res => res.json()),
     { enabled: isOpen }
+  );
+
+  const queryClient = useQueryClient();
+
+  const createCompanyMutation = useMutation(
+    async (name) => {
+      const response = await fetch('/api/companies', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name })
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || 'Failed to create company');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: (data) => {
+        const newCompany = data?.company;
+        if (!newCompany) {
+          return;
+        }
+
+        queryClient.setQueryData('companies', (old) => {
+          if (!old) {
+            return { companies: [newCompany] };
+          }
+
+          const existing = old.companies || [];
+          if (existing.some((company) => company.id === newCompany.id)) {
+            return old;
+          }
+
+          return {
+            ...old,
+            companies: [...existing, newCompany]
+          };
+        });
+      }
+    }
   );
 
   const { data: resumeVersions } = useQuery(
@@ -60,6 +106,35 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
 
   const watchedCompanyId = watch('company_id');
   const watchedIsRemote = watch('is_remote');
+
+  const companyOptions = companies?.companies?.map(company => ({
+    value: company.id.toString(),
+    label: company.name
+  })) || [];
+
+  const handleCreateCompany = async (name) => {
+    const trimmedName = name.trim();
+
+    if (!trimmedName || createCompanyMutation.isLoading) {
+      return false;
+    }
+
+    try {
+      const result = await createCompanyMutation.mutateAsync(trimmedName);
+      const newCompanyId = result?.company?.id;
+
+      if (newCompanyId) {
+        setValue('company_id', newCompanyId.toString(), { shouldValidate: true });
+        trigger('company_id');
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error creating company:', error);
+      alert(error.message || 'Failed to create company');
+      return false;
+    }
+  };
 
   // Application source options
   const applicationSourceOptions = [
@@ -440,23 +515,28 @@ Tip: Raw text is fine - use 'Format Text' to clean it up!"
                   <label className="form-label">
                     Company <span style={{ color: '#ef4444', fontWeight: 'bold' }}>*</span>
                   </label>
-                  <select
-                    className={`form-input ${errors.company_id ? 'border-red-500' : ''}`}
-                    style={errors.company_id ? { borderColor: '#ef4444' } : {}}
-                    {...register('company_id', { required: 'Company is required' })}
-                  >
-                    <option value="">Select a company</option>
-                    {companies?.companies?.map(company => (
-                      <option key={company.id} value={company.id}>
-                        {company.name}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.company_id && (
-                    <div style={{ color: '#ef4444', fontSize: '14px', marginTop: '4px' }}>
-                      {errors.company_id.message}
-                    </div>
-                  )}
+                  <SearchableDropdown
+                    options={companyOptions}
+                    value={watch('company_id') || ''}
+                    onChange={(value) => {
+                      setValue('company_id', value, { shouldValidate: true });
+                      trigger('company_id');
+                    }}
+                    placeholder="Select or create a company..."
+                    required
+                    error={errors.company_id?.message}
+                    allowCreate
+                    onCreateOption={handleCreateCompany}
+                    isLoading={createCompanyMutation.isLoading}
+                  />
+                  <div style={{
+                    marginTop: '8px',
+                    fontSize: '12px',
+                    color: '#6b7280',
+                    lineHeight: '1.4'
+                  }}>
+                    Can't find it? Add the company by name now and refine it later from the Companies page.
+                  </div>
                 </div>
 
                 <div className="form-group">

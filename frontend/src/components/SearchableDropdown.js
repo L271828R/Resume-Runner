@@ -1,25 +1,36 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { ChevronDown, Search } from 'lucide-react';
+import { ChevronDown, Search, PlusCircle } from 'lucide-react';
 
 const SearchableDropdown = ({
-  options,
+  options = [],
   value,
   onChange,
   placeholder = "Select...",
   className = "",
   required = false,
-  error = null
+  error = null,
+  allowCreate = false,
+  onCreateOption,
+  createOptionLabel,
+  isLoading = false,
+  renderOption
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const dropdownRef = useRef(null);
 
+  const normalizedSearch = searchTerm.toLowerCase();
   const filteredOptions = options.filter(option =>
-    option.label.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    option.value.toLowerCase().includes(searchTerm.toLowerCase())
+    option.label.toLowerCase().includes(normalizedSearch) ||
+    String(option.value).toLowerCase().includes(normalizedSearch)
   );
 
   const selectedOption = options.find(opt => opt.value === value);
+  const trimmedSearch = searchTerm.trim();
+  const hasExactMatch = options.some(
+    option => option.label.toLowerCase() === trimmedSearch.toLowerCase()
+  );
+  const showCreateButton = allowCreate && trimmedSearch && !hasExactMatch;
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -46,6 +57,18 @@ const SearchableDropdown = ({
     }
   };
 
+  const handleCreate = async () => {
+    if (!onCreateOption || !trimmedSearch || isLoading) {
+      return;
+    }
+
+    const shouldClose = await onCreateOption(trimmedSearch);
+    if (shouldClose !== false) {
+      setIsOpen(false);
+      setSearchTerm('');
+    }
+  };
+
   return (
     <div className={className} ref={dropdownRef} style={{ position: 'relative' }}>
       <div
@@ -63,6 +86,9 @@ const SearchableDropdown = ({
           fontSize: '14px',
           minHeight: '38px'
         }}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-required={required}
       >
         <span style={{
           color: selectedOption ? '#1f2937' : '#9ca3af',
@@ -131,34 +157,59 @@ const SearchableDropdown = ({
             maxHeight: '160px',
             overflowY: 'auto'
           }}>
-            {filteredOptions.length > 0 ? (
-              filteredOptions.map((option) => (
-                <div
-                  key={option.value}
-                  onClick={() => handleSelect(option)}
-                  style={{
-                    padding: '8px 12px',
-                    cursor: 'pointer',
-                    fontSize: '14px',
-                    backgroundColor: value === option.value ? '#f3f4f6' : 'white',
-                    color: '#1f2937',
-                    borderBottom: '1px solid #f3f4f6'
-                  }}
-                  onMouseEnter={(e) => {
-                    if (value !== option.value) {
-                      e.target.style.backgroundColor = '#f9fafb';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    if (value !== option.value) {
-                      e.target.style.backgroundColor = 'white';
-                    }
-                  }}
-                >
-                  {option.label}
-                </div>
-              ))
-            ) : (
+            {filteredOptions.map((option) => (
+              <div
+                key={option.value}
+                onClick={() => handleSelect(option)}
+                style={{
+                  padding: '8px 12px',
+                  cursor: 'pointer',
+                  fontSize: '14px',
+                  backgroundColor: value === option.value ? '#f3f4f6' : 'white',
+                  color: '#1f2937',
+                  borderBottom: '1px solid #f3f4f6'
+                }}
+                onMouseEnter={(e) => {
+                  if (value !== option.value) {
+                    e.currentTarget.style.backgroundColor = '#f9fafb';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (value !== option.value) {
+                    e.currentTarget.style.backgroundColor = 'white';
+                  }
+                }}
+              >
+                {renderOption ? renderOption(option) : option.label}
+              </div>
+            ))}
+
+            {showCreateButton && (
+              <div
+                onClick={handleCreate}
+                style={{
+                  padding: '10px 12px',
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  fontSize: '14px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  backgroundColor: '#f9fafb',
+                  color: '#1f2937',
+                  borderTop: filteredOptions.length ? '1px solid #e5e7eb' : 'none',
+                  opacity: isLoading ? 0.6 : 1
+                }}
+              >
+                <PlusCircle size={16} />
+                {isLoading
+                  ? 'Creating...'
+                  : (createOptionLabel
+                    ? createOptionLabel(trimmedSearch)
+                    : `Create "${trimmedSearch}"`)}
+              </div>
+            )}
+
+            {!filteredOptions.length && !showCreateButton && (
               <div style={{
                 padding: '12px',
                 textAlign: 'center',
