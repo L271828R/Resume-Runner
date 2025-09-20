@@ -38,7 +38,7 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
   // Register validation rules for SearchableDropdown fields
   register('company_id', { required: 'Company is required' });
   register('application_source', { required: 'Application source is required' });
-  register('resume_version_id', { required: 'Resume version is required' });
+  register('resume_version_id');
 
   // Fetch companies and resume versions for dropdowns
   const { data: companies } = useQuery(
@@ -191,12 +191,6 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
       return;
     }
 
-    if (!data.resume_version_id) {
-      console.error('Missing resume_version_id');
-      setValue('resume_version_id', '', { shouldValidate: true });
-      return;
-    }
-
     if (!data.company_id) {
       console.error('Missing company_id');
       return;
@@ -214,7 +208,7 @@ const ApplicationForm = ({ isOpen, onClose, onSubmit, application = null, onDele
       const applicationData = {
         ...data,
         company_id: parseInt(data.company_id),
-        resume_version_id: parseInt(data.resume_version_id),
+        resume_version_id: data.resume_version_id ? parseInt(data.resume_version_id) : null,
         recruiter_id: data.recruiter_id ? parseInt(data.recruiter_id) : null,
         job_posting_text: jobPostingText,
         salary_min: data.salary_min ? parseInt(data.salary_min) : null,
@@ -586,23 +580,24 @@ Tip: Raw text is fine - use 'Format Text' to clean it up!"
 
                 <div className="form-group">
                   <label className="form-label">
-                    Resume Version Used <span style={{ color: '#ef4444', fontWeight: 'bold' }}>*</span>
-                  </label>
-                  <SearchableDropdown
-                    options={resumeVersions?.resume_versions?.map(version => ({
-                      value: version.id.toString(),
-                      label: `${version.version_name}${version.is_master ? ' (Master)' : ''}`
-                    })) || []}
-                    value={watch('resume_version_id') || ''}
-                    onChange={(value) => {
-                      setValue('resume_version_id', value);
-                      trigger('resume_version_id');
-                    }}
-                    placeholder="Select resume version..."
-                    required
-                    error={errors.resume_version_id?.message}
-                  />
-                </div>
+                Resume Version Used
+              </label>
+              <SearchableDropdown
+                options={resumeVersions?.resume_versions?.map(version => ({
+                  value: version.id.toString(),
+                  label: `${version.version_name}${version.is_master ? ' (Master)' : ''}`
+                })) || []}
+                value={watch('resume_version_id') || ''}
+                onChange={(value) => {
+                  setValue('resume_version_id', value);
+                }}
+                placeholder="Select resume version..."
+                required={false}
+              />
+              <div style={{ marginTop: '8px', fontSize: '12px', color: '#6b7280' }}>
+                You can link a resume now or attach one later from the application details page.
+              </div>
+            </div>
 
                 <div className="form-group">
                   <label className="form-label">Recruiter Contact (Optional)</label>

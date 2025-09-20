@@ -1080,10 +1080,22 @@ def create_application():
     try:
         data = request.get_json()
 
-        # Normalize numeric identifiers
+        if not data:
+            return jsonify({'error': 'Request body required'}), 400
+
+        # Normalize numeric identifiers, allowing optional resume assignment
         for key in ['company_id', 'resume_version_id', 'recruiter_id', 'job_posting_id']:
-            if key in data and data[key] not in (None, ''):
-                data[key] = int(data[key])
+            if key in data:
+                if data[key] in (None, ''):
+                    data[key] = None
+                else:
+                    try:
+                        data[key] = int(data[key])
+                    except (TypeError, ValueError):
+                        return jsonify({'error': f'Invalid value for {key}'}), 400
+
+        if not data.get('position_title'):
+            return jsonify({'error': 'position_title is required'}), 400
 
         # Map notes field to outcome_notes in database
         if 'notes' in data and data['notes']:
@@ -1186,22 +1198,43 @@ def update_application_status(app_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
-@app.route('/api/applications/<int:app_id>/resume', methods=['PUT'])
+@app.route('/api/applications/<int:app_id>/resume', methods=['GET', 'PUT', 'DELETE'])
 def update_application_resume(app_id):
-    """Update the resume version associated with an application"""
+    """Create, update, or remove the resume version associated with an application"""
     try:
-        data = request.get_json()
-        resume_version_id = data.get('resume_version_id')
-
-        if not resume_version_id:
-            return jsonify({'error': 'resume_version_id is required'}), 400
-
-        resume_version_id = int(resume_version_id)
-
-        # Ensure application exists before updating
         application = db.get_application_details(app_id)
         if not application:
             return jsonify({'error': 'Application not found'}), 404
+
+        if request.method == 'GET':
+            resume_payload = None
+            if application.get('resume_version_id'):
+                resume_payload = {
+                    'resume_version_id': application.get('resume_version_id'),
+                    'resume_version': application.get('resume_version'),
+                    'resume_content': application.get('resume_content'),
+                    'resume_skills': application.get('resume_skills')
+                }
+            return jsonify({'resume': resume_payload})
+
+        if request.method == 'DELETE':
+            db.update_application_resume(app_id, None)
+            updated = db.get_application_details(app_id)
+            return jsonify({'application': updated})
+
+        data = request.get_json() or {}
+
+        if 'resume_version_id' not in data:
+            return jsonify({'error': 'resume_version_id is required'}), 400
+
+        resume_version_id = data.get('resume_version_id')
+        if resume_version_id in (None, ''):
+            resume_version_id = None
+        else:
+            try:
+                resume_version_id = int(resume_version_id)
+            except (TypeError, ValueError):
+                return jsonify({'error': 'Invalid resume_version_id'}), 400
 
         db.update_application_resume(app_id, resume_version_id)
         updated = db.get_application_details(app_id)

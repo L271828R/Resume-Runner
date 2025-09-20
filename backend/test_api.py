@@ -182,6 +182,27 @@ def test_create_application(client, populated_db):
     assert data['application']['position_title'] == 'New Test Application'
     assert data['application']['id'] is not None
 
+
+def test_create_application_without_resume(client, populated_db):
+    """Applications can be created without specifying a resume"""
+    new_application = {
+        'company_id': populated_db['company_id'],
+        'position_title': 'Resume Optional Application',
+        'application_source': 'test'
+    }
+
+    response = client.post(
+        '/api/applications',
+        data=json.dumps(new_application),
+        content_type='application/json'
+    )
+
+    assert response.status_code == 201
+    payload = json.loads(response.data)
+    application = payload['application']
+    assert application['resume_version_id'] is None
+    assert application.get('resume_version') is None
+
 def test_get_application_by_id(client, populated_db):
     """Test getting a single application by its ID"""
     db = populated_db['db']
@@ -214,6 +235,46 @@ def test_update_application(client, populated_db):
     assert 'application' in data
     assert data['application']['status'] == 'interview'
     assert data['application']['position_title'] == 'Test Application'
+
+
+def test_manage_application_resume(client, populated_db):
+    """Test the resume management endpoints"""
+    db = populated_db['db']
+    app_id = db.add_application(
+        company_id=populated_db['company_id'],
+        position_title='Resume CRUD Test',
+        application_source='test'
+    )
+
+    resume_id = populated_db['resume_id']
+
+    # Attach a resume via PUT
+    put_response = client.put(
+        f'/api/applications/{app_id}/resume',
+        data=json.dumps({'resume_version_id': resume_id}),
+        content_type='application/json'
+    )
+    assert put_response.status_code == 200
+    put_payload = json.loads(put_response.data)
+    assert put_payload['application']['resume_version_id'] == resume_id
+
+    # Read back the resume via GET
+    get_response = client.get(f'/api/applications/{app_id}/resume')
+    assert get_response.status_code == 200
+    resume_payload = json.loads(get_response.data)
+    assert resume_payload['resume']['resume_version_id'] == resume_id
+
+    # Remove the resume via DELETE
+    delete_response = client.delete(f'/api/applications/{app_id}/resume')
+    assert delete_response.status_code == 200
+    delete_payload = json.loads(delete_response.data)
+    assert delete_payload['application']['resume_version_id'] is None
+
+    # Subsequent GET should report no resume
+    follow_up_response = client.get(f'/api/applications/{app_id}/resume')
+    assert follow_up_response.status_code == 200
+    follow_up_payload = json.loads(follow_up_response.data)
+    assert follow_up_payload['resume'] is None
 
 def test_delete_application(client, populated_db):
     """Test deleting an application"""

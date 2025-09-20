@@ -284,6 +284,28 @@ const ApplicationDetail = () => {
         await queryClient.invalidateQueries(['application', id]);
         await queryClient.invalidateQueries('applications');
         setShowChangeResumeModal(false);
+        setSelectedResumeId('');
+      }
+    }
+  );
+
+  const removeResumeMutation = useMutation(
+    async () => {
+      const response = await fetch(`/api/applications/${id}/resume`, { method: 'DELETE' });
+
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || 'Failed to remove resume');
+      }
+
+      return response.json();
+    },
+    {
+      onSuccess: async () => {
+        await queryClient.invalidateQueries(['application', id]);
+        await queryClient.invalidateQueries('applications');
+        setShowChangeResumeModal(false);
+        setSelectedResumeId('');
       }
     }
   );
@@ -338,10 +360,18 @@ const ApplicationDetail = () => {
   );
 
   const app = data?.application;
+  const hasResume = Boolean(app?.resume_version_id);
+  const isSameResumeSelection =
+    hasResume && selectedResumeId !== '' && selectedResumeId === String(app?.resume_version_id);
+  const resumeModalError =
+    (updateResumeMutation.isError && (updateResumeMutation.error?.message || 'Failed to update resume')) ||
+    (removeResumeMutation.isError && (removeResumeMutation.error?.message || 'Failed to update resume')) ||
+    null;
 
   useEffect(() => {
-    if (showChangeResumeModal && app?.resume_version_id) {
-      setSelectedResumeId(String(app.resume_version_id));
+    if (showChangeResumeModal) {
+      const current = app?.resume_version_id ? String(app.resume_version_id) : '';
+      setSelectedResumeId(current);
     }
   }, [showChangeResumeModal, app?.resume_version_id]);
 
@@ -351,6 +381,11 @@ const ApplicationDetail = () => {
 
   const handleOpenResumeViewer = async () => {
     if (!app) return;
+
+    if (!hasResume) {
+      alert('No resume is attached to this application yet.');
+      return;
+    }
 
     const normaliseSkills = (value) => {
       if (Array.isArray(value)) return value;
@@ -792,65 +827,100 @@ const ApplicationDetail = () => {
         {/* Right Column */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
           {/* Resume Information */}
-          <InfoCard title="Resume Version Used">
-            <div style={{
-              background: '#f8fafc',
-              padding: '16px',
-              borderRadius: '8px',
-              border: '1px solid #e2e8f0'
-            }}>
+          <InfoCard title="Resume Attachment">
+            {hasResume ? (
               <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '12px'
+                background: '#f8fafc',
+                padding: '16px',
+                borderRadius: '8px',
+                border: '1px solid #e2e8f0'
               }}>
-                <div style={{ fontWeight: '600', color: '#1f2937' }}>
-                  {app.resume_version}
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '12px'
+                }}>
+                  <div style={{ fontWeight: '600', color: '#1f2937' }}>
+                    {app.resume_version || 'Resume linked'}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px', padding: '4px 8px' }}
+                      onClick={handleOpenResumeViewer}
+                      disabled={removeResumeMutation.isLoading}
+                    >
+                      View Resume
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px', padding: '4px 8px' }}
+                      onClick={() => setShowChangeResumeModal(true)}
+                      disabled={removeResumeMutation.isLoading}
+                    >
+                      <RotateCw size={14} />
+                      Change
+                    </button>
+                    <button
+                      className="btn btn-secondary"
+                      style={{ fontSize: '12px', padding: '4px 8px', color: '#b91c1c', borderColor: '#fecaca' }}
+                      onClick={() => {
+                        if (removeResumeMutation.isLoading || updateResumeMutation.isLoading) return;
+                        if (!window.confirm('Remove the resume from this application?')) return;
+                        removeResumeMutation.mutate();
+                      }}
+                      disabled={removeResumeMutation.isLoading || updateResumeMutation.isLoading}
+                    >
+                      {removeResumeMutation.isLoading ? 'Removing...' : 'Remove'}
+                    </button>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '12px', padding: '4px 8px' }}
-                    onClick={handleOpenResumeViewer}
-                  >
-                    View Resume
-                  </button>
-                  <button
-                    className="btn btn-secondary"
-                    style={{ fontSize: '12px', padding: '4px 8px' }}
-                    onClick={() => setShowChangeResumeModal(true)}
-                  >
-                    <RotateCw size={14} />
-                    Change
-                  </button>
-                </div>
+                {Array.isArray(app.resume_skills) && app.resume_skills.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>
+                      Skills Emphasized:
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                      {app.resume_skills.map((skill, index) => (
+                        <span
+                          key={index}
+                          style={{
+                            background: '#eff6ff',
+                            color: '#2563eb',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
-              {app.resume_skills && (
-                <div>
-                  <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '8px' }}>
-                    Skills Emphasized:
-                  </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                    {app.resume_skills.map((skill, index) => (
-                      <span
-                        key={index}
-                        style={{
-                          background: '#eff6ff',
-                          color: '#2563eb',
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: '500'
-                        }}
-                      >
-                        {skill}
-                      </span>
-                    ))}
-                  </div>
+            ) : (
+              <div style={{
+                background: '#f9fafb',
+                padding: '20px',
+                borderRadius: '8px',
+                border: '1px dashed #d1d5db',
+                textAlign: 'center'
+              }}>
+                <div style={{ fontSize: '14px', color: '#6b7280', marginBottom: '12px' }}>
+                  No resume is attached to this application yet.
                 </div>
-              )}
-            </div>
+                <button
+                  className="btn btn-primary"
+                  style={{ fontSize: '12px', padding: '6px 12px' }}
+                  onClick={() => setShowChangeResumeModal(true)}
+                >
+                  Attach Resume
+                </button>
+              </div>
+            )}
           </InfoCard>
 
           {/* Recruiter Information */}
@@ -1007,17 +1077,21 @@ const ApplicationDetail = () => {
                 className="form-input"
                 value={selectedResumeId}
                 onChange={(e) => setSelectedResumeId(e.target.value)}
+                disabled={updateResumeMutation.isLoading || removeResumeMutation.isLoading}
               >
-                <option value="">Select a resume version</option>
+                <option value="">Choose a resume version...</option>
                 {resumeData?.resume_versions?.map((version) => (
                   <option key={version.id} value={version.id}>
                     {version.version_name}{version.is_master ? ' (Master)' : ''}
                   </option>
                 ))}
               </select>
+              <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '8px' }}>
+                Save to attach the selected resume, or remove the current attachment if you no longer need it.
+              </div>
             </div>
 
-            {updateResumeMutation.isError && (
+            {resumeModalError && (
               <div style={{
                 background: '#fee2e2',
                 color: '#b91c1c',
@@ -1027,30 +1101,53 @@ const ApplicationDetail = () => {
                 border: '1px solid #fecaca',
                 fontSize: '13px'
               }}>
-                {updateResumeMutation.error?.message || 'Failed to update resume'}
+                {resumeModalError}
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
-              <button
-                className="btn btn-secondary"
-                onClick={() => setShowChangeResumeModal(false)}
-                style={{ padding: '8px 12px' }}
-                disabled={updateResumeMutation.isLoading}
-              >
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={() => {
-                  if (!selectedResumeId) return;
-                  updateResumeMutation.mutate({ resume_version_id: selectedResumeId });
-                }}
-                disabled={updateResumeMutation.isLoading || !selectedResumeId}
-                style={{ padding: '8px 12px' }}
-              >
-                {updateResumeMutation.isLoading ? 'Saving...' : 'Save'}
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginTop: '20px' }}>
+              {hasResume ? (
+                <button
+                  className="btn btn-secondary"
+                  style={{ padding: '8px 12px', color: '#b91c1c', borderColor: '#fecaca' }}
+                  onClick={() => {
+                    if (removeResumeMutation.isLoading || updateResumeMutation.isLoading) return;
+                    if (!window.confirm('Remove the resume from this application?')) return;
+                    removeResumeMutation.mutate();
+                  }}
+                  disabled={removeResumeMutation.isLoading || updateResumeMutation.isLoading}
+                >
+                  {removeResumeMutation.isLoading ? 'Removing...' : 'Remove Resume'}
+                </button>
+              ) : <span />}
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => setShowChangeResumeModal(false)}
+                  style={{ padding: '8px 12px' }}
+                  disabled={updateResumeMutation.isLoading || removeResumeMutation.isLoading}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => {
+                    if (!selectedResumeId) return;
+                    const resumeIdNumber = parseInt(selectedResumeId, 10);
+                    if (Number.isNaN(resumeIdNumber)) return;
+                    updateResumeMutation.mutate({ resume_version_id: resumeIdNumber });
+                  }}
+                  disabled={
+                    updateResumeMutation.isLoading ||
+                    removeResumeMutation.isLoading ||
+                    !selectedResumeId ||
+                    isSameResumeSelection
+                  }
+                  style={{ padding: '8px 12px' }}
+                >
+                  {updateResumeMutation.isLoading ? 'Saving...' : 'Save'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

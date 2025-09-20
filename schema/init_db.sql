@@ -73,7 +73,7 @@ CREATE TABLE applications (
     company_id INTEGER NOT NULL,
     job_posting_id INTEGER, -- May be NULL for cold applications
     recruiter_id INTEGER, -- May be NULL for direct applications
-    resume_version_id INTEGER NOT NULL,
+    resume_version_id INTEGER,
     position_title TEXT NOT NULL,
     application_date DATE NOT NULL,
     application_source TEXT, -- 'LinkedIn', 'Indeed', 'Company Website', 'Recruiter', etc.
@@ -206,7 +206,7 @@ SELECT
     JULIANDAY('now') - JULIANDAY(a.application_date) as days_since_application
 FROM applications a
 JOIN companies c ON a.company_id = c.id
-JOIN resume_versions rv ON a.resume_version_id = rv.id
+LEFT JOIN resume_versions rv ON a.resume_version_id = rv.id
 LEFT JOIN recruiters r ON a.recruiter_id = r.id
 LEFT JOIN job_postings jp ON a.job_posting_id = jp.id
 WHERE a.status NOT IN ('rejected', 'withdrawn', 'offer')

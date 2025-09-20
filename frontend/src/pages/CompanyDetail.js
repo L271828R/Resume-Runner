@@ -580,15 +580,17 @@ const CompanyDetail = () => {
                         {getStatusBadge(app.status)}
                       </td>
                       <td>
-                        <span style={{
-                          background: '#eff6ff',
-                          color: '#2563eb',
-                          padding: '4px 8px',
-                          borderRadius: '4px',
-                          fontSize: '12px',
-                          fontWeight: '500'
-                        }}>
-                          {app.resume_used}
+                        <span
+                          style={{
+                            background: app.resume_used ? '#eff6ff' : '#f3f4f6',
+                            color: app.resume_used ? '#2563eb' : '#6b7280',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '12px',
+                            fontWeight: '500'
+                          }}
+                        >
+                          {app.resume_used || 'No resume yet'}
                         </span>
                       </td>
                       <td>

@@ -3,6 +3,7 @@ Tests for database operations in Resume Runner
 """
 import pytest
 import json
+import sqlite3
 from datetime import datetime, date
 
 
@@ -128,9 +129,12 @@ class TestResumeVersionOperations:
         resume = db.get_resume_version(resume_id)
 
         assert 'skills_emphasized' in resume
-        # Skills should be parsed back from JSON
-        if resume['skills_emphasized']:
-            skills = json.loads(resume['skills_emphasized'])
+        skills_value = resume['skills_emphasized']
+        if skills_value:
+            if isinstance(skills_value, str):
+                skills = json.loads(skills_value)
+            else:
+                skills = skills_value
             assert isinstance(skills, list)
             assert 'Python' in skills
             assert 'Machine Learning' in skills
@@ -262,6 +266,25 @@ class TestApplicationOperations:
         assert test_app is not None
         assert test_app['position_title'] == sample_application_data['position_title']
 
+    def test_get_active_applications_without_resume(self, populated_db, sample_application_data):
+        """Active applications should include records that do not yet have a resume"""
+        db = populated_db['db']
+
+        application_data = {
+            **sample_application_data,
+            'company_id': populated_db['company_id'],
+            'position_title': 'Resume Pending'
+        }
+        application_data.pop('resume_version_id', None)
+
+        app_id = db.add_application(**application_data)
+
+        applications = db.get_active_applications()
+        test_app = next((app for app in applications if app['id'] == app_id), None)
+
+        assert test_app is not None
+        assert test_app['resume_used'] is None
+
     def test_get_application_details(self, populated_db, sample_application_data):
         """Test getting detailed application information"""
         db = populated_db['db']
@@ -277,6 +300,24 @@ class TestApplicationOperations:
         assert details['position_title'] == sample_application_data['position_title']
         assert details['application_source'] == sample_application_data['application_source']
         assert 'company_name' in details  # Should include joined data
+
+    def test_get_application_details_without_resume(self, populated_db, sample_application_data):
+        """Details should be retrievable even without a resume"""
+        db = populated_db['db']
+
+        application_data = {
+            **sample_application_data,
+            'company_id': populated_db['company_id'],
+            'position_title': 'Resume TBD'
+        }
+        application_data.pop('resume_version_id', None)
+
+        app_id = db.add_application(**application_data)
+        details = db.get_application_details(app_id)
+
+        assert details is not None
+        assert details['resume_version_id'] is None
+        assert details['resume_version'] is None
 
     def test_update_application_status(self, populated_db, sample_application_data):
         """Test updating application status"""
@@ -296,7 +337,7 @@ class TestApplicationOperations:
         # Verify update
         details = db.get_application_details(app_id)
         assert details['status'] == 'phone_screen'
-        assert details['notes'] == notes
+        assert details['outcome_notes'] == notes
 
     def test_search_applications_by_company(self, populated_db, sample_application_data):
         """Test searching applications by company name"""
@@ -318,6 +359,39 @@ class TestApplicationOperations:
         assert test_app is not None
         assert 'Test Company' in test_app['company_name']
 
+    def test_add_application_without_resume(self, populated_db, sample_application_data):
+        """Applications can be recorded without linking a resume"""
+        db = populated_db['db']
+
+        application_data = {
+            **sample_application_data,
+            'company_id': populated_db['company_id'],
+            'position_title': 'Resume Later'
+        }
+        application_data.pop('resume_version_id', None)
+
+        app_id = db.add_application(**application_data)
+        assert isinstance(app_id, int)
+
+        details = db.get_application_details(app_id)
+        assert details['resume_version_id'] is None
+        assert details['resume_version'] is None
+
+    def test_update_application_resume_clear(self, populated_db, sample_application_data):
+        """Clearing an application's resume should persist"""
+        db = populated_db['db']
+
+        sample_application_data['company_id'] = populated_db['company_id']
+        sample_application_data['resume_version_id'] = populated_db['resume_id']
+        app_id = db.add_application(**sample_application_data)
+
+        result = db.update_application_resume(app_id, None)
+        assert result is True
+
+        details = db.get_application_details(app_id)
+        assert details['resume_version_id'] is None
+        assert details['resume_version'] is None
+
 
 class TestDatabaseIntegrity:
     """Test database constraints and data integrity"""
@@ -336,13 +410,11 @@ class TestDatabaseIntegrity:
         """Test handling of duplicate company names"""
         # Add first company
         company_id1 = temp_db.add_company(**sample_company_data)
-
-        # Try to add duplicate (should work, as names can be similar)
-        company_id2 = temp_db.add_company(**sample_company_data)
-
-        assert company_id1 != company_id2  # Different IDs
         assert company_id1 > 0
-        assert company_id2 > 0
+
+        # Second insert with same name should violate UNIQUE constraint
+        with pytest.raises(sqlite3.IntegrityError):
+            temp_db.add_company(**sample_company_data)
 
     def test_foreign_key_constraints(self, populated_db, sample_application_data):
         """Test foreign key constraints work properly"""
@@ -352,7 +424,7 @@ class TestDatabaseIntegrity:
         sample_application_data['company_id'] = 99999  # Non-existent
         sample_application_data['resume_version_id'] = populated_db['resume_id']
 
-        with pytest.raises(Exception):  # Should raise foreign key constraint error
+        with pytest.raises(sqlite3.IntegrityError):
             db.add_application(**sample_application_data)
 
     def test_master_resume_logic(self, temp_db, sample_resume_data):

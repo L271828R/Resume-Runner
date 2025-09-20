@@ -38,6 +38,7 @@ class ResumeRunnerDB:
         """Get database connection with row factory"""
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row  # Enable dict-like access
+        conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     # Company operations
@@ -94,7 +95,11 @@ class ResumeRunnerDB:
         """Find company by name (case insensitive)"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM companies WHERE LOWER(name) = LOWER(?)", (name,))
+            search_term = f"%{name}%"
+            cursor.execute(
+                "SELECT * FROM companies WHERE LOWER(name) LIKE LOWER(?) LIMIT 1",
+                (search_term,)
+            )
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -758,7 +763,7 @@ class ResumeRunnerDB:
             return cursor.lastrowid
 
     # Application operations
-    def add_application(self, company_id: int, resume_version_id: int, position_title: str,
+    def add_application(self, company_id: int, resume_version_id: Optional[int] = None, position_title: str = None,
                        application_date: date = None, job_posting_id: int = None,
                        recruiter_id: int = None, application_source: str = None,
                        cover_letter_s3_key: str = None, job_posting_text: str = None,
@@ -767,10 +772,18 @@ class ResumeRunnerDB:
                        is_remote: Optional[bool] = None, notes: str = None,
                        outcome_notes: str = None, **kwargs) -> int:
         """Add a new job application"""
+        if position_title is None:
+            raise ValueError("position_title is required")
+
         if application_date is None:
             application_date = date.today()
         elif isinstance(application_date, str) and application_date:
             application_date = date.fromisoformat(application_date)
+
+        if resume_version_id in ("", None):
+            resume_version_id = None
+        else:
+            resume_version_id = int(resume_version_id)
 
         if salary_min in ("", None):
             salary_min = None
@@ -845,8 +858,13 @@ class ResumeRunnerDB:
                 WHERE id = ?
             """, (status, response_date, notes, application_id))
 
-    def update_application_resume(self, application_id: int, resume_version_id: int):
-        """Update which resume version was used for an application"""
+    def update_application_resume(self, application_id: int, resume_version_id: Optional[int]) -> bool:
+        """Update or clear the resume version used for an application"""
+        if resume_version_id in ("", None):
+            resume_version_id = None
+        else:
+            resume_version_id = int(resume_version_id)
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -854,6 +872,7 @@ class ResumeRunnerDB:
                 SET resume_version_id = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = ?
             """, (resume_version_id, application_id))
+            return cursor.rowcount > 0
 
     def update_application(self, application_id: int, **kwargs) -> bool:
         """Update application fields"""
@@ -994,7 +1013,7 @@ class ResumeRunnerDB:
                 SELECT a.*, rv.version_name as resume_used, r.name as recruiter_name,
                        jp.title as job_posting_title
                 FROM applications a
-                JOIN resume_versions rv ON a.resume_version_id = rv.id
+                LEFT JOIN resume_versions rv ON a.resume_version_id = rv.id
                 LEFT JOIN recruiters r ON a.recruiter_id = r.id
                 LEFT JOIN job_postings jp ON a.job_posting_id = jp.id
                 WHERE a.company_id = ?
@@ -1044,7 +1063,7 @@ class ResumeRunnerDB:
                 SELECT a.*, c.name as company_name, rv.version_name as resume_version
                 FROM applications a
                 JOIN companies c ON a.company_id = c.id
-                JOIN resume_versions rv ON a.resume_version_id = rv.id
+                LEFT JOIN resume_versions rv ON a.resume_version_id = rv.id
                 WHERE LOWER(c.name) LIKE LOWER(?)
                 ORDER BY a.application_date DESC
             """, (f"%{company_name}%",))
@@ -1069,7 +1088,7 @@ class ResumeRunnerDB:
                     r.name as recruiter_name, r.email as recruiter_email
                 FROM applications a
                 JOIN companies c ON a.company_id = c.id
-                JOIN resume_versions rv ON a.resume_version_id = rv.id
+                LEFT JOIN resume_versions rv ON a.resume_version_id = rv.id
                 LEFT JOIN job_postings jp ON a.job_posting_id = jp.id
                 LEFT JOIN recruiters r ON a.recruiter_id = r.id
                 WHERE a.id = ?
