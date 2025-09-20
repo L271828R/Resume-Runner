@@ -30,7 +30,7 @@ const TagSelector = ({ selectedTags = [], onTagsChange, className = '' }) => {
   };
 
   const handleCreateTag = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
 
     if (!newTagName.trim()) return;
 
@@ -218,7 +218,7 @@ const TagSelector = ({ selectedTags = [], onTagsChange, className = '' }) => {
           </button>
         ) : (
           /* Create New Tag Form */
-          <form onSubmit={handleCreateTag} style={{
+          <div style={{
             border: '1px solid #d1d5db',
             borderRadius: '4px',
             padding: '12px',
@@ -309,7 +309,8 @@ const TagSelector = ({ selectedTags = [], onTagsChange, className = '' }) => {
               gap: '6px'
             }}>
               <button
-                type="submit"
+                type="button"
+                onClick={handleCreateTag}
                 style={{
                   flex: 1,
                   padding: '4px 8px',
@@ -345,7 +346,7 @@ const TagSelector = ({ selectedTags = [], onTagsChange, className = '' }) => {
                 Cancel
               </button>
             </div>
-          </form>
+          </div>
         )}
       </div>
 

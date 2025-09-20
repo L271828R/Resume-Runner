@@ -1,7 +1,3 @@
--- Resume Runner Database Schema
--- SQLite3 database for tracking job applications, resume versions, companies, and recruiters
-
--- Companies table - track companies and their hiring patterns
 CREATE TABLE companies (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL UNIQUE,
@@ -19,8 +15,6 @@ CREATE TABLE companies (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Resume versions table - track different versions of resumes
 CREATE TABLE resume_versions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     filename TEXT NOT NULL,
@@ -35,9 +29,7 @@ CREATE TABLE resume_versions (
     word_count INTEGER, -- For quick analysis
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Recruiters table - track recruiters and their preferences
+, editable_s3_key TEXT, editable_filename TEXT);
 CREATE TABLE recruiters (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
@@ -53,11 +45,9 @@ CREATE TABLE recruiters (
     success_rate REAL DEFAULT 0.0, -- How many of their referrals led to interviews
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, is_starred BOOLEAN DEFAULT 0, position_title TEXT, department TEXT, manager_name TEXT, manager_email TEXT, manager_phone TEXT, manager_linkedin_url TEXT, account_name TEXT, account_type TEXT, office_location TEXT, timezone TEXT, phone_secondary TEXT, preferred_contact_method TEXT, is_manager BOOLEAN DEFAULT FALSE, team_size INTEGER, decision_authority TEXT, primary_company_id INTEGER REFERENCES companies(id),
     FOREIGN KEY (current_resume_version_id) REFERENCES resume_versions(id)
 );
-
--- Job postings table - track individual job postings
 CREATE TABLE job_postings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id INTEGER NOT NULL,
@@ -78,8 +68,6 @@ CREATE TABLE job_postings (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (company_id) REFERENCES companies(id)
 );
-
--- Applications table - track job applications you've made
 CREATE TABLE applications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id INTEGER NOT NULL,
@@ -112,8 +100,6 @@ CREATE TABLE applications (
     FOREIGN KEY (recruiter_id) REFERENCES recruiters(id),
     FOREIGN KEY (resume_version_id) REFERENCES resume_versions(id)
 );
-
--- Communication log table - track all communications
 CREATE TABLE communications (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id INTEGER,
@@ -131,8 +117,6 @@ CREATE TABLE communications (
     FOREIGN KEY (recruiter_id) REFERENCES recruiters(id),
     FOREIGN KEY (company_id) REFERENCES companies(id)
 );
-
--- Application events timeline table - track detailed progress for each application
 CREATE TABLE application_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id INTEGER NOT NULL,
@@ -154,8 +138,6 @@ CREATE TABLE application_events (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE
 );
-
--- AI insights table - store AI-generated insights for future use
 CREATE TABLE ai_insights (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     insight_type TEXT NOT NULL, -- 'resume_optimization', 'company_timing', 'application_strategy'
@@ -166,8 +148,6 @@ CREATE TABLE ai_insights (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     is_validated BOOLEAN DEFAULT NULL -- TRUE if proven correct, FALSE if wrong, NULL if unknown
 );
-
--- Indexes for common queries
 CREATE INDEX idx_applications_company ON applications(company_id);
 CREATE INDEX idx_applications_status ON applications(status);
 CREATE INDEX idx_applications_date ON applications(application_date);
@@ -176,10 +156,6 @@ CREATE INDEX idx_communications_application ON communications(application_id);
 CREATE INDEX idx_recruiters_status ON recruiters(relationship_status);
 CREATE INDEX idx_application_events_application ON application_events(application_id);
 CREATE INDEX idx_application_events_event_date ON application_events(event_date);
-
--- Views for common queries
-
--- Success metrics by resume version
 CREATE VIEW resume_success_metrics AS
 SELECT
     rv.id,
@@ -194,9 +170,8 @@ SELECT
     ) as interview_rate
 FROM resume_versions rv
 LEFT JOIN applications a ON rv.id = a.resume_version_id
-GROUP BY rv.id, rv.version_name, rv.skills_emphasized;
-
--- Company hiring activity
+GROUP BY rv.id, rv.version_name, rv.skills_emphasized
+/* resume_success_metrics(id,version_name,skills_emphasized,total_applications,interviews,offers,interview_rate) */;
 CREATE VIEW company_activity AS
 SELECT
     c.id,
@@ -210,9 +185,8 @@ SELECT
 FROM companies c
 LEFT JOIN job_postings jp ON c.id = jp.company_id
 LEFT JOIN applications a ON c.id = a.company_id
-GROUP BY c.id, c.name;
-
--- Active applications dashboard
+GROUP BY c.id, c.name
+/* company_activity(id,name,total_jobs_posted,applications_sent,last_job_posted,avg_salary_min,avg_salary_max,remote_jobs) */;
 CREATE VIEW active_applications AS
 SELECT
     a.id,
@@ -236,4 +210,130 @@ JOIN resume_versions rv ON a.resume_version_id = rv.id
 LEFT JOIN recruiters r ON a.recruiter_id = r.id
 LEFT JOIN job_postings jp ON a.job_posting_id = jp.id
 WHERE a.status NOT IN ('rejected', 'withdrawn', 'offer')
-ORDER BY a.application_date DESC;
+ORDER BY a.application_date DESC
+/* active_applications(id,company_name,position_title,application_date,status,resume_used,recruiter_name,recruiter_primary_contact,salary_min,salary_max,is_remote,job_posting_text,job_location,job_url,days_since_application) */;
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    color TEXT DEFAULT '#3B82F6', -- hex color for UI display
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE resume_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resume_version_id INTEGER NOT NULL,
+    tag_id INTEGER NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (resume_version_id) REFERENCES resume_versions(id) ON DELETE CASCADE,
+    FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE,
+    UNIQUE(resume_version_id, tag_id) -- Prevent duplicate tag assignments
+);
+CREATE INDEX idx_resume_tags_resume ON resume_tags(resume_version_id);
+CREATE INDEX idx_resume_tags_tag ON resume_tags(tag_id);
+CREATE INDEX idx_tags_name ON tags(name);
+CREATE VIEW resume_versions_with_tags AS
+SELECT
+    rv.id,
+    rv.filename,
+    rv.version_name,
+    rv.target_roles,
+    rv.description,
+    rv.success_rate,
+    rv.created_at,
+    rv.updated_at,
+    GROUP_CONCAT(t.name, ', ') as tags,
+    COUNT(t.id) as tag_count
+FROM resume_versions rv
+LEFT JOIN resume_tags rt ON rv.id = rt.resume_version_id
+LEFT JOIN tags t ON rt.tag_id = t.id
+GROUP BY rv.id, rv.filename, rv.version_name, rv.target_roles, rv.description, rv.success_rate, rv.created_at, rv.updated_at
+/* resume_versions_with_tags(id,filename,version_name,target_roles,description,success_rate,created_at,updated_at,tags,tag_count) */;
+CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY);
+CREATE TABLE managers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT,
+    phone TEXT,
+    phone_secondary TEXT,
+    linkedin_url TEXT,
+    position_title TEXT,
+    department TEXT,
+    company_id INTEGER,
+    office_location TEXT,
+    timezone TEXT,
+    preferred_contact_method TEXT DEFAULT 'email',
+    decision_authority TEXT,
+    is_hiring_manager BOOLEAN DEFAULT FALSE,
+    team_size INTEGER,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES companies(id)
+);
+CREATE INDEX idx_managers_company ON managers(company_id);
+CREATE INDEX idx_managers_email ON managers(email);
+CREATE TABLE recruiter_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recruiter_id INTEGER NOT NULL,
+    event_type TEXT DEFAULT 'note',
+    title TEXT NOT NULL,
+    description TEXT,
+    event_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    follow_up_required BOOLEAN DEFAULT 0,
+    follow_up_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (recruiter_id) REFERENCES recruiters(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_recruiter_events_recruiter ON recruiter_events(recruiter_id);
+CREATE INDEX idx_recruiter_events_date ON recruiter_events(event_date);
+CREATE TABLE company_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    event_type TEXT DEFAULT 'note',
+    title TEXT NOT NULL,
+    description TEXT,
+    event_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    follow_up_required BOOLEAN DEFAULT 0,
+    follow_up_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+);
+CREATE INDEX idx_company_events_company ON company_events(company_id);
+CREATE INDEX idx_company_events_date ON company_events(event_date);
+CREATE INDEX idx_resume_versions_files ON resume_versions(s3_key, editable_s3_key);
+CREATE VIEW recruiter_dashboard AS
+SELECT
+    r.id,
+    r.name,
+    r.primary_contact_name,
+    r.email,
+    r.phone,
+    r.company,
+    r.linkedin_url,
+    r.specialties,
+    r.current_resume_version_id,
+    r.last_contact_date,
+    r.relationship_status,
+    r.success_rate,
+    r.notes,
+    r.is_starred,
+    r.created_at,
+    r.updated_at,
+    COUNT(DISTINCT a.id) as total_applications,
+    COUNT(CASE WHEN a.status IN ('phone_screen', 'interview', 'offer') THEN 1 END) as successful_applications,
+    MAX(a.application_date) as last_application_date,
+    r.last_contact_date as last_communication,
+    GROUP_CONCAT(
+        CASE WHEN a.application_date IS NOT NULL
+        THEN c.name || '|' || a.position_title || '|' || a.application_date || '|' || a.status
+        END, '; '
+    ) as recent_applications
+FROM recruiters r
+LEFT JOIN applications a ON r.id = a.recruiter_id
+LEFT JOIN companies c ON a.company_id = c.id
+GROUP BY r.id, r.name, r.primary_contact_name, r.email, r.phone, r.company, r.linkedin_url, r.specialties,
+         r.current_resume_version_id, r.last_contact_date, r.relationship_status,
+         r.success_rate, r.notes, r.is_starred, r.created_at, r.updated_at
+/* recruiter_dashboard(id,name,primary_contact_name,email,phone,company,linkedin_url,specialties,current_resume_version_id,last_contact_date,relationship_status,success_rate,notes,is_starred,created_at,updated_at,total_applications,successful_applications,last_application_date,last_communication,recent_applications) */;

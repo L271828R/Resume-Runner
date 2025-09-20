@@ -25,7 +25,11 @@ class S3Helper:
         """Initialize S3 client with configuration from environment"""
         self.bucket_name = os.getenv('S3_BUCKET_NAME', 'your-resume-runner-bucket')
         self.aws_region = os.getenv('AWS_REGION', 'us-east-1')
+        self.environment = os.getenv('ENVIRONMENT', 'dev')  # dev, test, production
         self.is_stubbed = self.bucket_name == 'your-resume-runner-bucket'
+
+        # Set S3 path prefix based on environment
+        self.s3_prefix = f"{self.environment}/"
 
         if not self.is_stubbed:
             try:
@@ -49,9 +53,9 @@ class S3Helper:
 
         # Surface final operating mode for clarity in logs
         if self.is_stubbed:
-            print("ℹ️  S3Helper active in STUB mode – uploads will be simulated locally")
+            print(f"ℹ️  S3Helper active in STUB mode [{self.environment}] – uploads will be simulated locally")
         else:
-            print(f"ℹ️  S3Helper connected to bucket '{self.bucket_name}' in region '{self.aws_region}'")
+            print(f"ℹ️  S3Helper connected to bucket '{self.bucket_name}' in region '{self.aws_region}' [{self.environment}]")
 
     def _verify_bucket_access(self):
         """Verify we can access the S3 bucket"""
@@ -80,10 +84,10 @@ class S3Helper:
             return self._stub_upload_resume(file_path, version_name)
 
         try:
-            # Generate S3 key
+            # Generate S3 key with environment prefix
             file_extension = Path(file_path).suffix
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            s3_key = f"resume-runner/resumes/{version_name}_{timestamp}{file_extension}"
+            s3_key = f"{self.s3_prefix}resumes/{version_name}_{timestamp}{file_extension}"
 
             # Determine content type
             content_type, _ = mimetypes.guess_type(file_path)
@@ -124,12 +128,12 @@ class S3Helper:
             return self._stub_upload_screenshot(file_path, company_name, job_title)
 
         try:
-            # Generate S3 key
+            # Generate S3 key with environment prefix
             file_extension = Path(file_path).suffix
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             safe_company = company_name.replace(' ', '_').replace('/', '_')
             safe_job = job_title.replace(' ', '_').replace('/', '_')[:50]  # Limit length
-            s3_key = f"resume-runner/job_screenshots/{safe_company}_{safe_job}_{timestamp}{file_extension}"
+            s3_key = f"{self.s3_prefix}job_screenshots/{safe_company}_{safe_job}_{timestamp}{file_extension}"
 
             # Upload file
             with open(file_path, 'rb') as file:
@@ -166,11 +170,11 @@ class S3Helper:
             return self._stub_upload_cover_letter(file_path, company_name, position_title)
 
         try:
-            # Generate S3 key
+            # Generate S3 key with environment prefix
             file_extension = Path(file_path).suffix
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
             safe_company = company_name.replace(' ', '_').replace('/', '_')
-            s3_key = f"resume-runner/cover_letters/{safe_company}_{position_title.replace(' ', '_')}_{timestamp}{file_extension}"
+            s3_key = f"{self.s3_prefix}cover_letters/{safe_company}_{position_title.replace(' ', '_')}_{timestamp}{file_extension}"
 
             # Upload file
             with open(file_path, 'rb') as file:
@@ -258,9 +262,11 @@ class S3Helper:
             return self._stub_list_files(prefix)
 
         try:
+            # Prepend environment prefix to the search prefix
+            full_prefix = f"{self.s3_prefix}{prefix}" if prefix else self.s3_prefix
             response = self.s3_client.list_objects_v2(
                 Bucket=self.bucket_name,
-                Prefix=prefix
+                Prefix=full_prefix
             )
             if 'Contents' in response:
                 return [obj['Key'] for obj in response['Contents']]
@@ -274,7 +280,7 @@ class S3Helper:
         """Stub method for resume upload"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         file_extension = Path(file_path).suffix
-        s3_key = f"resume-runner/resumes/{version_name}_{timestamp}{file_extension}"
+        s3_key = f"{self.s3_prefix}resumes/{version_name}_{timestamp}{file_extension}"
         print(f"🧪 STUB: Would upload resume to S3 as {s3_key}")
         return s3_key
 
@@ -283,7 +289,7 @@ class S3Helper:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         safe_company = company_name.replace(' ', '_').replace('/', '_')
         safe_job = job_title.replace(' ', '_').replace('/', '_')[:50]
-        s3_key = f"resume-runner/job_screenshots/{safe_company}_{safe_job}_{timestamp}.png"
+        s3_key = f"{self.s3_prefix}job_screenshots/{safe_company}_{safe_job}_{timestamp}.png"
         print(f"🧪 STUB: Would upload screenshot to S3 as {s3_key}")
         return s3_key
 
@@ -291,7 +297,7 @@ class S3Helper:
         """Stub method for cover letter upload"""
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         safe_company = company_name.replace(' ', '_').replace('/', '_')
-        s3_key = f"resume-runner/cover_letters/{safe_company}_{position_title.replace(' ', '_')}_{timestamp}.pdf"
+        s3_key = f"{self.s3_prefix}cover_letters/{safe_company}_{position_title.replace(' ', '_')}_{timestamp}.pdf"
         print(f"🧪 STUB: Would upload cover letter to S3 as {s3_key}")
         return s3_key
 
